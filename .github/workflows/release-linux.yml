@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   build-and-release-linux:
-    name: Build Linux Binary And Publish Release Asset
+    name: Build GNU And MUSL Linux Binaries And Publish Release Assets
     runs-on: ubuntu-latest
 
     steps:
@@ -22,43 +22,65 @@ jobs:
       - name: Ensure LFS objects are present
         run: git lfs pull
 
-      - name: Install Rust toolchain and target
-        run: |
-          rustup toolchain install stable --profile minimal
-          rustup default stable
-          rustup target add x86_64-unknown-linux-musl
-
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl musl-tools musl-dev linux-musl-dev pkg-config perl make cmake
+          sudo apt-get install -y pkg-config perl make cmake build-essential
 
-      - name: Build static Linux binary
-        run: cargo build --release --locked --no-default-features --target x86_64-unknown-linux-musl
+      - name: Build GNU glibc dynamic Linux binary
+        run: cargo build --release --locked --no-default-features --target x86_64-unknown-linux-gnu
+
+      - name: Build MUSL static Linux binary via Dockerfile
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker build \
+            --target builder \
+            --build-arg CARGO_FEATURES="--locked --no-default-features" \
+            -t memory-mcp-server-musl-builder:latest \
+            .
+
+          CONTAINER_ID="$(docker create memory-mcp-server-musl-builder:latest)"
+          trap 'docker rm -f "$CONTAINER_ID" >/dev/null 2>&1 || true' EXIT
+
+          mkdir -p target/x86_64-unknown-linux-musl/release
+          docker cp \
+            "$CONTAINER_ID":/usr/src/app/target/release/memory-mcp-server \
+            target/x86_64-unknown-linux-musl/release/memory-mcp-server
+          chmod +x target/x86_64-unknown-linux-musl/release/memory-mcp-server
 
       - name: Prepare release package
-        id: package
         shell: bash
         run: |
           set -euo pipefail
 
           TAG="${GITHUB_REF_NAME}"
-          TARGET="x86_64-unknown-linux-musl"
           APP="memory-mcp-server"
-          PKG_NAME="${APP}-${TAG}-${TARGET}"
+          TARGET_GNU="x86_64-unknown-linux-gnu"
+          TARGET_MUSL="x86_64-unknown-linux-musl"
+          PKG_NAME_GNU="${APP}-${TAG}-${TARGET_GNU}"
+          PKG_NAME_MUSL="${APP}-${TAG}-${TARGET_MUSL}"
 
-          mkdir -p "dist/${PKG_NAME}"
+          mkdir -p "dist/${PKG_NAME_GNU}" "dist/${PKG_NAME_MUSL}"
 
-          cp "target/${TARGET}/release/${APP}" "dist/${PKG_NAME}/${APP}"
-          cp LICENSE "dist/${PKG_NAME}/LICENSE"
-          cp THIRD_PARTY_NOTICES.md "dist/${PKG_NAME}/THIRD_PARTY_NOTICES.md"
-          cp README.md "dist/${PKG_NAME}/README.md"
-          cp assets/all-MiniLM-L6-v2-LICENSE.txt "dist/${PKG_NAME}/all-MiniLM-L6-v2-LICENSE.txt"
+          cp "target/${TARGET_GNU}/release/${APP}" "dist/${PKG_NAME_GNU}/${APP}"
+          cp LICENSE "dist/${PKG_NAME_GNU}/LICENSE"
+          cp THIRD_PARTY_NOTICES.md "dist/${PKG_NAME_GNU}/THIRD_PARTY_NOTICES.md"
+          cp README.md "dist/${PKG_NAME_GNU}/README.md"
+          cp assets/all-MiniLM-L6-v2-LICENSE.txt "dist/${PKG_NAME_GNU}/all-MiniLM-L6-v2-LICENSE.txt"
 
-          tar -C dist -czf "dist/${PKG_NAME}.tar.gz" "${PKG_NAME}"
-          sha256sum "dist/${PKG_NAME}.tar.gz" > "dist/${PKG_NAME}.tar.gz.sha256"
+          cp "target/${TARGET_MUSL}/release/${APP}" "dist/${PKG_NAME_MUSL}/${APP}"
+          cp LICENSE "dist/${PKG_NAME_MUSL}/LICENSE"
+          cp THIRD_PARTY_NOTICES.md "dist/${PKG_NAME_MUSL}/THIRD_PARTY_NOTICES.md"
+          cp README.md "dist/${PKG_NAME_MUSL}/README.md"
+          cp assets/all-MiniLM-L6-v2-LICENSE.txt "dist/${PKG_NAME_MUSL}/all-MiniLM-L6-v2-LICENSE.txt"
 
-          echo "package=${PKG_NAME}" >> "$GITHUB_OUTPUT"
+          tar -C dist -czf "dist/${PKG_NAME_GNU}.tar.gz" "${PKG_NAME_GNU}"
+          sha256sum "dist/${PKG_NAME_GNU}.tar.gz" > "dist/${PKG_NAME_GNU}.tar.gz.sha256"
+
+          tar -C dist -czf "dist/${PKG_NAME_MUSL}.tar.gz" "${PKG_NAME_MUSL}"
+          sha256sum "dist/${PKG_NAME_MUSL}.tar.gz" > "dist/${PKG_NAME_MUSL}.tar.gz.sha256"
 
       - name: Publish release assets with gh CLI
         env:
@@ -67,13 +89,11 @@ jobs:
           set -euo pipefail
 
           TAG="${GITHUB_REF_NAME}"
-          ARCHIVE="dist/${{ steps.package.outputs.package }}.tar.gz"
-          CHECKSUM="dist/${{ steps.package.outputs.package }}.tar.gz.sha256"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" --clobber
+            gh release upload "$TAG" dist/*.tar.gz dist/*.sha256 --clobber
           else
-            gh release create "$TAG" "$ARCHIVE" "$CHECKSUM" \
+            gh release create "$TAG" dist/*.tar.gz dist/*.sha256 \
               --title "$TAG" \
               --notes-file CHANGELOG.md
           fi
