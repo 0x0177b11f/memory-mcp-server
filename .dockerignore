@@ -3,7 +3,6 @@ target/
 **/.gitignore
 **/.env
 **/.vscode
-assets/*.onnx
 Dockerfile
 .dockerignore
 docker-compose.yml
