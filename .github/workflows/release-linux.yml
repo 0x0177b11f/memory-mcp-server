@@ -31,7 +31,7 @@ jobs:
       - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y musl-tools pkg-config perl make
+          sudo apt-get install -y musl musl-tools musl-dev linux-musl-dev pkg-config perl make cmake
 
       - name: Build static Linux binary
         run: cargo build --release --locked --no-default-features --target x86_64-unknown-linux-musl
