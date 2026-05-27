@@ -1,0 +1,34 @@
+[package]
+name = "memory-mcp-server"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+gpu = ["burn/wgpu"]
+
+[dependencies]
+diesel = { version = "2.3.9", features = ["chrono", "postgres", "r2d2", "serde_json"] }
+pq-sys = { version = "0.7.5", features = ["bundled"] }
+openssl-sys = { version = "0.9.116", features = ["vendored"] }
+tokio = { version = "1", features = ["full"] }
+hyper = { version = "1", features = ["full"] }
+http-body-util = "0.1"
+hyper-util = { version = "0.1", features = ["full"] }
+clap = { version = "4.6.1", features = ["derive", "env"] }
+burn = { version = "0.21.0", features = ["flex"] }
+burn-store = "0.21.0"
+tokenizers = "0.23.1"
+pgvector = { version = "0.4.2", features = ["diesel", "serde"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+chrono = { version = "0.4.44", features = ["serde"] }
+dotenvy = "0.15.7"
+rmcp = { version = "1.7.0", features = ["server", "macros", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
+schemars = "1.2.1"
+anyhow = "1.0.102"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["json", "env-filter"] }
+
+[build-dependencies]
+burn-onnx = "~0.21"
