@@ -1,0 +1,35 @@
+version: '3.8'
+
+services:
+  memory-mcp-server:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    image: memory-mcp-server:latest
+    ports:
+      - "9180:9180"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/memory_mcp
+      - RUST_LOG=info
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: pgvector/pgvector:pg17
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=memory_mcp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

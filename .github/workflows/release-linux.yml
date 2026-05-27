@@ -1,0 +1,79 @@
+name: release-linux
+
+on:
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release-linux:
+    name: Build Linux Binary And Publish Release Asset
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (with Git LFS)
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Ensure LFS objects are present
+        run: git lfs pull
+
+      - name: Install Rust toolchain and target
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools pkg-config perl make
+
+      - name: Build static Linux binary
+        run: cargo build --release --locked --no-default-features --target x86_64-unknown-linux-musl
+
+      - name: Prepare release package
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          TARGET="x86_64-unknown-linux-musl"
+          APP="memory-mcp-server"
+          PKG_NAME="${APP}-${TAG}-${TARGET}"
+
+          mkdir -p "dist/${PKG_NAME}"
+
+          cp "target/${TARGET}/release/${APP}" "dist/${PKG_NAME}/${APP}"
+          cp LICENSE "dist/${PKG_NAME}/LICENSE"
+          cp THIRD_PARTY_NOTICES.md "dist/${PKG_NAME}/THIRD_PARTY_NOTICES.md"
+          cp README.md "dist/${PKG_NAME}/README.md"
+          cp assets/all-MiniLM-L6-v2-LICENSE.txt "dist/${PKG_NAME}/all-MiniLM-L6-v2-LICENSE.txt"
+
+          tar -C dist -czf "dist/${PKG_NAME}.tar.gz" "${PKG_NAME}"
+          sha256sum "dist/${PKG_NAME}.tar.gz" > "dist/${PKG_NAME}.tar.gz.sha256"
+
+          echo "package=${PKG_NAME}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release assets with gh CLI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          ARCHIVE="dist/${{ steps.package.outputs.package }}.tar.gz"
+          CHECKSUM="dist/${{ steps.package.outputs.package }}.tar.gz.sha256"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARCHIVE" "$CHECKSUM" --clobber
+          else
+            gh release create "$TAG" "$ARCHIVE" "$CHECKSUM" \
+              --title "$TAG" \
+              --notes "Automated release for $TAG"
+          fi
