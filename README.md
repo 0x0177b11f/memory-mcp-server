@@ -103,17 +103,19 @@ This project uses model assets from `sentence-transformers/all-MiniLM-L6-v2` on 
 The Docker build process uses the repository model asset (`assets/model.onnx`, managed by Git LFS) during compile time.
 The model data is embedded into the compiled binary, so runtime distribution does not require shipping model/tokenizer files under `assets/`.
 
-## Binary Distribution Notice
+## Linux Binary Distribution Notice
 
-This project is planned to publish static binaries via GitHub Actions CI.
+This project publishes Linux x86_64 static binaries via GitHub Actions CI.
 
-When distributing binaries (for example via GitHub Releases), distributors should also provide:
+GitHub Releases currently contain a single Linux artifact built for `x86_64-unknown-linux-musl`.
+
+When distributing the Linux release binary (for example via GitHub Releases), distributors should also provide:
 
 - a copy of `LICENSE` for this project;
 - third-party attribution details in `THIRD_PARTY_NOTICES.md`;
 - the model license copy in `assets/all-MiniLM-L6-v2-LICENSE.txt`.
 
-For this project, release archives do not need to include model files from `assets/` because the model is embedded in the binary.
+For this project, Linux release archives do not need to include model files from `assets/` because the model is embedded in the binary.
 
 ## MCP Server Features
 
