@@ -20,8 +20,8 @@ COPY Cargo.toml Cargo.lock ./
 COPY build.rs ./
 COPY assets/ ./assets/
 
-# Use model asset tracked in repository (Git LFS)
-RUN test -s ./assets/model.onnx
+# Check model file exists and not git LFS pointer
+RUN test -f assets/model.onnx && ! grep -q "version https://git-lfs.github.com/spec/v1" assets/model.onnx
 
 # Create a dummy entry file to build the dependency cache
 RUN mkdir src && \
