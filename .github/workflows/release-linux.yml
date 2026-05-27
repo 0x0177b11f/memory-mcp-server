@@ -75,5 +75,5 @@ jobs:
           else
             gh release create "$TAG" "$ARCHIVE" "$CHECKSUM" \
               --title "$TAG" \
-              --notes "Automated release for $TAG"
+              --notes-file CHANGELOG.md
           fi

@@ -27,11 +27,11 @@ This project includes or redistributes third-party software and model assets.
 - This project preserves a local copy of the Apache-2.0 license text for the model asset.
 - If upstream later adds NOTICE files or additional attribution requirements, this file should be updated accordingly.
 
-### Binary Release Distribution
+### Linux Binary Release Distribution
 
-- Planned distribution includes static binaries built by GitHub Actions CI.
-- Binary release archives should include:
+- Distribution currently includes static Linux binaries built by GitHub Actions CI.
+- Linux binary release archives should include:
   - this third-party notice file;
   - the Apache-2.0 license copy at `assets/all-MiniLM-L6-v2-LICENSE.txt`;
   - clear attribution to the upstream model source.
-- Binary release archives are not required to include model/tokenizer runtime files from `assets/`, because the model is embedded in the executable.
+- Linux binary release archives are not required to include model/tokenizer runtime files from `assets/`, because the model is embedded in the executable.
