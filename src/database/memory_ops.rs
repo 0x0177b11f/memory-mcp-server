@@ -47,7 +47,7 @@ impl Database {
 
     pub fn search_memory(
         &self,
-        doc_id: Option<i64>,
+        doc_id: i64,
         query_emb: Vec<f32>,
         query_text: &str,
         column: &str,
@@ -63,14 +63,11 @@ impl Database {
         let mut conn = self.get_conn()?;
         let emb_col = format!("{}_embedding", column);
 
-        let mut filter_clause = "1=1".to_string();
-        if let Some(d_id) = doc_id {
-            filter_clause.push_str(&format!(" AND document_id = {}", d_id));
-        }
+        let mut materialized_view_clause = format!("document_id = {}", doc_id);
 
         let mut bind_metadata = false;
         if metadata_filter.is_some() {
-            filter_clause.push_str(" AND metadata @> $3");
+            materialized_view_clause.push_str(" AND metadata @> $3");
             bind_metadata = true;
         }
 
@@ -81,31 +78,38 @@ impl Database {
 
         let vector_order_expr = format!("{} <#> $1", emb_col);
         let keyword_order_expr = format!("similarity({}, $2)", column);
-        let keyword_where_clause = format!("{} AND {} % $2", filter_clause, column);
-        let vector_where_clause = format!("{} AND {} IS NOT NULL", filter_clause, emb_col);
+        let keyword_where_clause = format!("{} % $2", column);
+        let vector_where_clause = format!("{} IS NOT NULL", emb_col);
 
         let query = format!(
             r#"
-            WITH vector_search AS (
+            WITH scope AS MATERIALIZED (
+                SELECT id FROM memory_items WHERE {}
+            ),
+            vector_search AS (
                 SELECT id, ROW_NUMBER() OVER (ORDER BY {}) as vector_rank
-                FROM memory_items WHERE {}
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
+                WHERE {}
                 ORDER BY {}
                 LIMIT {}
             ),
             keyword_search AS (
                 SELECT id, ROW_NUMBER() OVER (ORDER BY {} DESC) as keyword_rank
-                FROM memory_items WHERE {}
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
+                WHERE {}
                 ORDER BY {} DESC
                 LIMIT {}
             ),
             ranked AS (
                 SELECT m.id, m.document_id, m.summary, m.content, m.metadata,
                        (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0))::float8 as distance
-                FROM memory_items m
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
                 LEFT JOIN vector_search v ON m.id = v.id
                 LEFT JOIN keyword_search k ON m.id = k.id
                 WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
-                    AND {}
             )
             SELECT *
             FROM ranked
@@ -113,6 +117,7 @@ impl Database {
             ORDER BY distance DESC
             LIMIT {}{}
             "#,
+            materialized_view_clause,
             vector_order_expr,
             vector_where_clause,
             vector_order_expr,
@@ -121,7 +126,6 @@ impl Database {
             keyword_where_clause,
             keyword_order_expr,
             rrf_limit,
-            filter_clause,
             min_distance_param,
             limit_param,
             offset_clause
