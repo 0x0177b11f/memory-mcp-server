@@ -44,7 +44,9 @@ pub mod memory_items {
 
     #[derive(Deserialize, JsonSchema)]
     pub struct InsertMemoryArgs {
-        #[schemars(description = "The ID of the document collection to insert the memory chunk into")]
+        #[schemars(
+            description = "The ID of the document collection to insert the memory chunk into"
+        )]
         pub document_id: i64,
         #[schemars(description = "A short summary of the memory chunk")]
         pub summary: String,
@@ -66,6 +68,10 @@ pub mod memory_items {
         pub document_id: Option<i64>,
         #[schemars(description = "The query string to search for")]
         pub query_text: String,
+        #[schemars(
+            description = "Optional minimum distance threshold; lower-scoring results are filtered out, default is 0.008 for cosine similarity"
+        )]
+        pub min_distance: Option<f64>,
         #[schemars(description = "The maximum number of results to return")]
         pub limit: Option<i64>,
         #[schemars(description = "The offset for pagination")]
@@ -82,6 +88,10 @@ pub mod memory_items {
         pub query_summary: String,
         #[schemars(description = "The query string to search for in memory contents")]
         pub query_content: String,
+        #[schemars(
+            description = "Optional minimum distance threshold; lower-scoring results are filtered out, default is 0.008 for cosine similarity"
+        )]
+        pub min_distance: Option<f64>,
         #[schemars(description = "The maximum number of results to return")]
         pub limit: Option<i64>,
         #[schemars(description = "The offset for pagination")]
@@ -92,4 +102,6 @@ pub mod memory_items {
 }
 
 pub use documents::{CreateDocArgs, DeleteDocArgs, ListDocsArgs, UpdateDocArgs};
-pub use memory_items::{DeleteMemoryArgs, InsertMemoryArgs, SearchMemoryArgs, SearchMemoryMultiArgs};
+pub use memory_items::{
+    DeleteMemoryArgs, InsertMemoryArgs, SearchMemoryArgs, SearchMemoryMultiArgs,
+};

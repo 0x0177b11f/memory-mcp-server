@@ -2,16 +2,27 @@ use crate::database;
 use crate::model;
 use crate::types::*;
 
-use serde_json::json;
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
     model::{CallToolResult, Content},
     tool, tool_handler, tool_router,
 };
+use serde_json::json;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use tracing::{info, error, debug};
+use tracing::{debug, error, info};
+
+const DEFAULT_MIN_DISTANCE: f64 = 0.008;
+
+fn resolve_min_distance(min_distance: Option<f64>) -> f64 {
+    let value = min_distance.unwrap_or(DEFAULT_MIN_DISTANCE);
+    if value.is_finite() && value >= 0.0 {
+        value
+    } else {
+        DEFAULT_MIN_DISTANCE
+    }
+}
 
 #[derive(Clone)]
 pub struct ServerState {
@@ -27,7 +38,11 @@ impl ServerState {
         db: Arc<database::Database>,
         max_results: i64,
     ) -> Self {
-        ServerState { db, model, max_results }
+        ServerState {
+            db,
+            model,
+            max_results,
+        }
     }
 
     #[tool(
@@ -57,14 +72,16 @@ impl ServerState {
                 error!("Failed to embed description: {}", e);
                 McpError::internal_error(e, None)
             })?;
-        let doc_id = self.db.create_document(&args.name, &name_emb, &args.description, &description_emb)
+        let doc_id = self
+            .db
+            .create_document(&args.name, &name_emb, &args.description, &description_emb)
             .map_err(|e| {
                 error!("Failed to create document: {}", e);
                 McpError::internal_error(e.to_string(), None)
             })?;
         info!("Document created with ID: {}", doc_id);
         Ok(CallToolResult::success(vec![Content::text(
-            json!({"name": args.name, "id": doc_id}).to_string()
+            json!({"name": args.name, "id": doc_id}).to_string(),
         )]))
     }
 
@@ -78,9 +95,7 @@ impl ServerState {
     ) -> Result<CallToolResult, McpError> {
         info!(
             "Listing documents with keyword: {:?}, limit: {:?}, offset: {:?}",
-            args.keyword,
-            args.limit,
-            args.offset
+            args.keyword, args.limit, args.offset
         );
         let requested_limit = args.limit.unwrap_or(5);
         let limit = std::cmp::min(requested_limit, self.max_results);
@@ -117,7 +132,7 @@ impl ServerState {
             })?;
         debug!("Found {} documents", docs.len());
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&docs).unwrap_or_else(|e| e.to_string())
+            serde_json::to_string(&docs).unwrap_or_else(|e| e.to_string()),
         )]))
     }
 
@@ -130,14 +145,13 @@ impl ServerState {
         Parameters(args): Parameters<DeleteDocArgs>,
     ) -> Result<CallToolResult, McpError> {
         info!("Deleting document ID: {}", args.document_id);
-        self.db.delete_document(args.document_id)
-            .map_err(|e| {
-                error!("Failed to delete document: {}", e);
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        self.db.delete_document(args.document_id).map_err(|e| {
+            error!("Failed to delete document: {}", e);
+            McpError::internal_error(e.to_string(), None)
+        })?;
         info!("Document ID: {} deleted", args.document_id);
         Ok(CallToolResult::success(vec![Content::text(
-            json!({"document_id": args.document_id}).to_string()
+            json!({"document_id": args.document_id}).to_string(),
         )]))
     }
 
@@ -151,7 +165,11 @@ impl ServerState {
     ) -> Result<CallToolResult, McpError> {
         info!("Updating document ID: {}", args.document_id);
 
-        let name = args.name.as_deref().map(str::trim).filter(|value| !value.is_empty());
+        let name = args
+            .name
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
         let description = args
             .description
             .as_deref()
@@ -218,7 +236,7 @@ impl ServerState {
 
         info!("Document ID: {} updated", args.document_id);
         Ok(CallToolResult::success(vec![Content::text(
-            json!({"document_id": args.document_id, "updated_fields": updated_fields}).to_string()
+            json!({"document_id": args.document_id, "updated_fields": updated_fields}).to_string(),
         )]))
     }
 
@@ -262,30 +280,28 @@ impl ServerState {
                 error!("Failed to insert memory: {}", e);
                 McpError::internal_error(e.to_string(), None)
             })?;
-        info!("Memory successfully inserted into document ID: {}", args.document_id);
+        info!(
+            "Memory successfully inserted into document ID: {}",
+            args.document_id
+        );
         Ok(CallToolResult::success(vec![Content::text(
-            json!({"document_id": args.document_id}).to_string()
+            json!({"document_id": args.document_id}).to_string(),
         )]))
     }
 
-    #[tool(
-        name = "delete_memory",
-        description = "Delete a specific memory chunk"
-    )]
+    #[tool(name = "delete_memory", description = "Delete a specific memory chunk")]
     pub async fn delete_memory(
         &self,
         Parameters(args): Parameters<DeleteMemoryArgs>,
     ) -> Result<CallToolResult, McpError> {
         info!("Deleting memory ID: {}", args.memory_id);
-        self.db
-            .delete_memory(args.memory_id)
-            .map_err(|e| {
-                error!("Failed to delete memory: {}", e);
-                McpError::internal_error(e.to_string(), None)
-            })?;
+        self.db.delete_memory(args.memory_id).map_err(|e| {
+            error!("Failed to delete memory: {}", e);
+            McpError::internal_error(e.to_string(), None)
+        })?;
         info!("Memory ID: {} deleted", args.memory_id);
         Ok(CallToolResult::success(vec![Content::text(
-            json!({"memory_id": args.memory_id}).to_string()
+            json!({"memory_id": args.memory_id}).to_string(),
         )]))
     }
 
@@ -297,7 +313,11 @@ impl ServerState {
         &self,
         Parameters(args): Parameters<SearchMemoryArgs>,
     ) -> Result<CallToolResult, McpError> {
-        info!("Searching memory by summary, doc_id: {:?}, query: '{}'", args.document_id, args.query_text);
+        info!(
+            "Searching memory by summary, doc_id: {:?}, query: '{}'",
+            args.document_id, args.query_text
+        );
+        let min_distance = resolve_min_distance(args.min_distance);
         let query_emb = self
             .model
             .lock()
@@ -318,6 +338,7 @@ impl ServerState {
                 "summary",
                 limit,
                 args.offset,
+                min_distance,
                 args.metadata_filter.clone(),
             )
             .map_err(|e| {
@@ -327,7 +348,7 @@ impl ServerState {
 
         debug!("Search memory summary returned {} results", results.len());
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string())
+            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string()),
         )]))
     }
 
@@ -339,7 +360,11 @@ impl ServerState {
         &self,
         Parameters(args): Parameters<SearchMemoryArgs>,
     ) -> Result<CallToolResult, McpError> {
-        info!("Searching memory by content, doc_id: {:?}, query: '{}'", args.document_id, args.query_text);
+        info!(
+            "Searching memory by content, doc_id: {:?}, query: '{}'",
+            args.document_id, args.query_text
+        );
+        let min_distance = resolve_min_distance(args.min_distance);
         let query_emb = self
             .model
             .lock()
@@ -360,6 +385,7 @@ impl ServerState {
                 "content",
                 limit,
                 args.offset,
+                min_distance,
                 args.metadata_filter.clone(),
             )
             .map_err(|e| {
@@ -368,7 +394,7 @@ impl ServerState {
             })?;
         debug!("Search memory content returned {} results", results.len());
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string())
+            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string()),
         )]))
     }
 
@@ -380,7 +406,11 @@ impl ServerState {
         &self,
         Parameters(args): Parameters<SearchMemoryMultiArgs>,
     ) -> Result<CallToolResult, McpError> {
-        info!("Searching memory, doc_id: {:?}, summary query: '{}', content query: '{}'", args.document_id, args.query_summary, args.query_content);
+        info!(
+            "Searching memory, doc_id: {:?}, summary query: '{}', content query: '{}'",
+            args.document_id, args.query_summary, args.query_content
+        );
+        let min_distance = resolve_min_distance(args.min_distance);
         let sum_emb = self
             .model
             .lock()
@@ -412,6 +442,7 @@ impl ServerState {
                 &args.query_content,
                 limit,
                 args.offset,
+                min_distance,
                 args.metadata_filter.clone(),
             )
             .map_err(|e| {
@@ -421,7 +452,7 @@ impl ServerState {
 
         debug!("Search memory returned {} results", results.len());
         Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string())
+            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string()),
         )]))
     }
 }
