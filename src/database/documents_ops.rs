@@ -51,28 +51,55 @@ impl Database {
                 if let Some(emb) = keyword_emb {
                     let rrf_limit = (limit_value + offset_value) * 10;
                     let query = r#"
-                        WITH vector_search AS (
+                        WITH name_vector AS (
                             SELECT id, ROW_NUMBER() OVER (
-                                ORDER BY (name_embedding <#> $1) + (COALESCE(description_embedding, name_embedding) <#> $1)
-                            ) AS vector_rank
+                                ORDER BY name_embedding <#> $1
+                            ) AS rank
                             FROM documents
-                            WHERE name_embedding IS NOT NULL OR description_embedding IS NOT NULL
+                            WHERE name_embedding IS NOT NULL
+                            ORDER BY name_embedding <#> $1
                             LIMIT $4
                         ),
-                        keyword_search AS (
+                        description_vector AS (
                             SELECT id, ROW_NUMBER() OVER (
-                                ORDER BY similarity(name, $2) + similarity(COALESCE(description, ''), $2) DESC
-                            ) AS keyword_rank
+                                ORDER BY description_embedding <#> $1
+                            ) AS rank
                             FROM documents
-                            WHERE name % $2 OR COALESCE(description, '') % $2
+                            WHERE description_embedding IS NOT NULL
+                            ORDER BY description_embedding <#> $1
+                            LIMIT $4
+                        ),
+                        name_keyword AS (
+                            SELECT id, ROW_NUMBER() OVER (
+                                ORDER BY similarity(name, $2) DESC
+                            ) AS rank
+                            FROM documents
+                            WHERE name % $2
+                            ORDER BY similarity(name, $2) DESC
+                            LIMIT $4
+                        ),
+                        description_keyword AS (
+                            SELECT id, ROW_NUMBER() OVER (
+                                ORDER BY similarity(COALESCE(description, ''), $2) DESC
+                            ) AS rank
+                            FROM documents
+                            WHERE COALESCE(description, '') % $2
+                            ORDER BY similarity(COALESCE(description, ''), $2) DESC
                             LIMIT $4
                         )
                         SELECT d.id, d.name, d.description, d.created_at
                         FROM documents d
-                        LEFT JOIN vector_search v ON d.id = v.id
-                        LEFT JOIN keyword_search k ON d.id = k.id
-                        WHERE v.id IS NOT NULL OR k.id IS NOT NULL
-                        ORDER BY (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0)) DESC
+                        LEFT JOIN name_vector nv ON d.id = nv.id
+                        LEFT JOIN description_vector dv ON d.id = dv.id
+                        LEFT JOIN name_keyword nk ON d.id = nk.id
+                        LEFT JOIN description_keyword dk ON d.id = dk.id
+                        WHERE nv.id IS NOT NULL OR dv.id IS NOT NULL OR nk.id IS NOT NULL OR dk.id IS NOT NULL
+                        ORDER BY (
+                            COALESCE(1.0 / (60 + nv.rank), 0.0) +
+                            COALESCE(1.0 / (60 + dv.rank), 0.0) +
+                            COALESCE(1.0 / (60 + nk.rank), 0.0) +
+                            COALESCE(1.0 / (60 + dk.rank), 0.0)
+                        ) DESC
                         LIMIT $3 OFFSET $5
                     "#;
 
