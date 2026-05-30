@@ -9,9 +9,10 @@ use hyper_util::{
     server::conn::auto::Builder,
     service::TowerToHyperService,
 };
-use rmcp::transport::{StreamableHttpServerConfig, streamable_http_server::{
-    StreamableHttpService, session::local::LocalSessionManager
-}};
+use rmcp::transport::{
+    StreamableHttpServerConfig,
+    streamable_http_server::{StreamableHttpService, session::local::LocalSessionManager},
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -39,7 +40,11 @@ struct Cli {
     max_search_results: i64,
 
     /// Database URL
-    #[arg(long, env = "DATABASE_URL", default_value = "postgres://postgres:password@localhost/memory_mcp_db")]
+    #[arg(
+        long,
+        env = "DATABASE_URL",
+        default_value = "postgres://postgres:password@localhost/memory_mcp_db"
+    )]
     db_url: String,
 
     /// Allowed hosts (comma-separated)
@@ -62,7 +67,9 @@ pub async fn main() -> anyhow::Result<()> {
 
     // Initialize JSON logger
     tracing_subscriber::registry()
-        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()))
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
+        )
         .with(tracing_subscriber::fmt::layer().json())
         .init();
 
@@ -72,9 +79,7 @@ pub async fn main() -> anyhow::Result<()> {
 
     // connect to PostgreSQL from environment variables
     tracing::info!("Connecting to database...");
-    let db = Arc::new(
-        database::Database::new(&cli.db_url)?,
-    );
+    let db = Arc::new(database::Database::new(&cli.db_url)?);
     if cli.migrate_only {
         db.migrate_database()?;
         tracing::info!("Database migration completed (--migrate-only). Exiting.");
@@ -91,12 +96,18 @@ pub async fn main() -> anyhow::Result<()> {
 
     let mut config = StreamableHttpServerConfig::default();
     if let Some(hosts_str) = cli.allowed_hosts {
-        let hosts = hosts_str.split(',').map(|s| s.trim().to_string()).collect::<Vec<_>>();
+        let hosts = hosts_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect::<Vec<_>>();
         tracing::info!("Configuring allowed hosts: {:?}", hosts);
         config = config.with_allowed_hosts(hosts);
     }
     if let Some(origins_str) = cli.allowed_origins {
-        let origins = origins_str.split(',').map(|s| s.trim().to_string()).collect::<Vec<_>>();
+        let origins = origins_str
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .collect::<Vec<_>>();
         tracing::info!("Configuring allowed origins: {:?}", origins);
         config = config.with_allowed_origins(origins);
     }

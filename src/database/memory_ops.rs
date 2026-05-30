@@ -3,8 +3,8 @@ use diesel::sql_query;
 use diesel::sql_types::*;
 use pgvector::Vector;
 
-use super::models::*;
 use super::Database;
+use super::models::*;
 
 impl Database {
     pub fn insert_memory(
@@ -53,6 +53,7 @@ impl Database {
         column: &str,
         limit: i64,
         offset: Option<i64>,
+        min_distance: f64,
         metadata_filter: Option<serde_json::Value>,
     ) -> anyhow::Result<Vec<SearchResult>> {
         if column != "summary" && column != "content" {
@@ -74,6 +75,7 @@ impl Database {
         }
 
         let limit_param = if bind_metadata { "$4" } else { "$3" };
+        let min_distance_param = if bind_metadata { "$5" } else { "$4" };
         let rrf_limit = (limit + offset.unwrap_or(0)) * 10;
         let offset_clause = offset.map(|o| format!(" OFFSET {}", o)).unwrap_or_default();
 
@@ -96,7 +98,8 @@ impl Database {
             FROM memory_items m
             LEFT JOIN vector_search v ON m.id = v.id
             LEFT JOIN keyword_search k ON m.id = k.id
-            WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                        WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
+                            AND (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0)) >= {}
             ORDER BY distance DESC
             LIMIT {}{}
             "#,
@@ -109,6 +112,7 @@ impl Database {
             column,
             column,
             rrf_limit,
+            min_distance_param,
             limit_param,
             offset_clause
         );
@@ -119,6 +123,7 @@ impl Database {
                 .bind::<diesel::sql_types::Text, _>(query_text)
                 .bind::<diesel::sql_types::Jsonb, _>(meta)
                 .bind::<BigInt, _>(limit)
+                .bind::<Double, _>(min_distance)
                 .load::<SearchResult>(&mut conn)?;
             Ok(results)
         } else {
@@ -126,6 +131,7 @@ impl Database {
                 .bind::<pgvector::sql_types::Vector, _>(Vector::from(query_emb))
                 .bind::<diesel::sql_types::Text, _>(query_text)
                 .bind::<BigInt, _>(limit)
+                .bind::<Double, _>(min_distance)
                 .load::<SearchResult>(&mut conn)?;
             Ok(results)
         }
@@ -140,6 +146,7 @@ impl Database {
         query_content: &str,
         limit: i64,
         offset: Option<i64>,
+        min_distance: f64,
         metadata_filter: Option<serde_json::Value>,
     ) -> anyhow::Result<Vec<SearchResult>> {
         let mut conn = self.get_conn()?;
@@ -156,6 +163,7 @@ impl Database {
         }
 
         let limit_param = if bind_metadata { "$6" } else { "$5" };
+        let min_distance_param = if bind_metadata { "$7" } else { "$6" };
         let rrf_limit = (limit + offset.unwrap_or(0)) * 10;
         let offset_clause = offset.map(|o| format!(" OFFSET {}", o)).unwrap_or_default();
 
@@ -178,7 +186,8 @@ impl Database {
             FROM memory_items m
             LEFT JOIN vector_search v ON m.id = v.id
             LEFT JOIN keyword_search k ON m.id = k.id
-            WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                        WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
+                            AND (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0)) >= {}
             ORDER BY distance DESC
             LIMIT {}{}
             "#,
@@ -186,6 +195,7 @@ impl Database {
             rrf_limit,
             filter_clause,
             rrf_limit,
+            min_distance_param,
             limit_param,
             offset_clause
         );
@@ -198,6 +208,7 @@ impl Database {
                 .bind::<diesel::sql_types::Text, _>(query_content)
                 .bind::<diesel::sql_types::Jsonb, _>(meta)
                 .bind::<BigInt, _>(limit)
+                .bind::<Double, _>(min_distance)
                 .load::<SearchResult>(&mut conn)?;
             Ok(results)
         } else {
@@ -207,6 +218,7 @@ impl Database {
                 .bind::<diesel::sql_types::Text, _>(query_summary)
                 .bind::<diesel::sql_types::Text, _>(query_content)
                 .bind::<BigInt, _>(limit)
+                .bind::<Double, _>(min_distance)
                 .load::<SearchResult>(&mut conn)?;
             Ok(results)
         }

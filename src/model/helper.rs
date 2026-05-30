@@ -5,9 +5,9 @@ use burn::backend::wgpu::{Wgpu, WgpuDevice};
 use burn::tensor::backend::Backend;
 use burn::tensor::{Bytes, Int, Tensor, TensorData};
 use tokenizers::Tokenizer;
-use tracing::{debug, error, info};
 #[cfg(not(feature = "gpu"))]
 use tracing::warn;
+use tracing::{debug, error, info};
 
 static WEIGHT_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/model/model.bpk"));
 static TOKENIZER_BYTES: &[u8] = include_bytes!(concat!(
@@ -97,24 +97,25 @@ impl RuntimeModel {
                 device,
                 model,
                 tokenizer: _,
-            } => self.run_embedding::<Wgpu>(device, model, input_ids, attention_mask, token_type_ids),
+            } => {
+                self.run_embedding::<Wgpu>(device, model, input_ids, attention_mask, token_type_ids)
+            }
             RuntimeModel::Cpu {
                 device,
                 model,
                 tokenizer: _,
-            } => self.run_embedding::<Flex>(device, model, input_ids, attention_mask, token_type_ids),
+            } => {
+                self.run_embedding::<Flex>(device, model, input_ids, attention_mask, token_type_ids)
+            }
         }
     }
 
     pub fn embedding_text(&self, text: &str) -> Result<Vec<f32>, String> {
         debug!("Embedding text with length: {}", text.len());
-        let encoding = self
-            .tokenizer()
-            .encode(text, true)
-            .map_err(|e| {
-                error!("Failed to tokenize input text: {}", e);
-                format!("failed to tokenize input text: {e}")
-            })?;
+        let encoding = self.tokenizer().encode(text, true).map_err(|e| {
+            error!("Failed to tokenize input text: {}", e);
+            format!("failed to tokenize input text: {e}")
+        })?;
 
         let input_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| i64::from(id)).collect();
         let attention_mask: Vec<i64> = encoding
@@ -140,12 +141,10 @@ impl RuntimeModel {
             TensorData::new(token_type_ids, [1, seq_len]),
         );
 
-        let values = output
-            .to_vec::<f32>()
-            .map_err(|e| {
-                error!("Failed to read model output: {}", e);
-                format!("failed to read model output: {e}")
-            })?;
+        let values = output.to_vec::<f32>().map_err(|e| {
+            error!("Failed to read model output: {}", e);
+            format!("failed to read model output: {e}")
+        })?;
 
         if values.is_empty() {
             error!("Model output is empty");
@@ -170,7 +169,9 @@ fn select_device(enable_gpu: bool) -> RuntimeDevice {
 #[cfg(not(feature = "gpu"))]
 fn select_device(enable_gpu: bool) -> RuntimeDevice {
     if enable_gpu {
-        warn!("--gpu requested, but binary was built without the 'gpu' feature; falling back to CPU");
+        warn!(
+            "--gpu requested, but binary was built without the 'gpu' feature; falling back to CPU"
+        );
     }
     info!("Selecting CPU (Flex) device for model inference");
     RuntimeDevice::Cpu(FlexDevice::default())
@@ -185,11 +186,10 @@ pub fn init_model(enable_gpu: bool) -> anyhow::Result<RuntimeModel> {
 
     let device = select_device(enable_gpu);
     info!("Loading tokenizer");
-    let tokenizer = Tokenizer::from_bytes(TOKENIZER_BYTES)
-        .map_err(|e| {
-            error!("Failed to load tokenizer: {}", e);
-            anyhow::anyhow!("failed to load tokenizer: {e}")
-        })?;
+    let tokenizer = Tokenizer::from_bytes(TOKENIZER_BYTES).map_err(|e| {
+        error!("Failed to load tokenizer: {}", e);
+        anyhow::anyhow!("failed to load tokenizer: {e}")
+    })?;
 
     info!("Instantiating runtime model");
     let model = match &device {
