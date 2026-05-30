@@ -82,8 +82,8 @@ pub mod memory_items {
 
     #[derive(Deserialize, JsonSchema)]
     pub struct SearchMemoryMultiArgs {
-        #[schemars(description = "The ID of the document collection to search in (optional)")]
-        pub document_id: Option<i64>,
+        #[schemars(description = "The ID of the document collection to search in")]
+        pub document_id: i64,
         #[schemars(description = "The query string to search for in memory summaries")]
         pub query_summary: String,
         #[schemars(description = "The query string to search for in memory contents")]
