@@ -38,12 +38,29 @@ impl ServerState {
         Parameters(args): Parameters<CreateDocArgs>,
     ) -> Result<CallToolResult, McpError> {
         info!("Creating document: {}", args.name);
-        let doc_id = self.db.create_document(&args.name, &args.description)
+        let name_emb = self
+            .model
+            .lock()
+            .await
+            .embedding_text(&args.name)
+            .map_err(|e| {
+                error!("Failed to embed name: {}", e);
+                McpError::internal_error(e, None)
+            })?;
+        let description_emb = self
+            .model
+            .lock()
+            .await
+            .embedding_text(&args.description)
+            .map_err(|e| {
+                error!("Failed to embed description: {}", e);
+                McpError::internal_error(e, None)
+            })?;
+        let doc_id = self.db.create_document(&args.name, &name_emb, &args.description, &description_emb)
             .map_err(|e| {
                 error!("Failed to create document: {}", e);
                 McpError::internal_error(e.to_string(), None)
             })?;
-
         info!("Document created with ID: {}", doc_id);
         Ok(CallToolResult::success(vec![Content::text(format!(
             "Document collection '{}' created with ID: {}",
@@ -59,12 +76,41 @@ impl ServerState {
         &self,
         Parameters(args): Parameters<ListDocsArgs>,
     ) -> Result<CallToolResult, McpError> {
-        info!("Listing documents with limit: {:?}, offset: {:?}", args.limit, args.offset);
+        info!(
+            "Listing documents with keyword: {:?}, limit: {:?}, offset: {:?}",
+            args.keyword,
+            args.limit,
+            args.offset
+        );
         let requested_limit = args.limit.unwrap_or(5);
         let limit = std::cmp::min(requested_limit, self.max_results);
+        let keyword_emb = if let Some(k) = args.keyword.as_deref() {
+            let trimmed = k.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(
+                    self.model
+                        .lock()
+                        .await
+                        .embedding_text(trimmed)
+                        .map_err(|e| {
+                            error!("Failed to embed list_documents keyword: {}", e);
+                            McpError::internal_error(e, None)
+                        })?,
+                )
+            }
+        } else {
+            None
+        };
         let docs = self
             .db
-            .list_documents(Some(limit), args.offset)
+            .list_documents(
+                Some(limit),
+                args.offset,
+                args.keyword.as_deref(),
+                keyword_emb.as_deref(),
+            )
             .map_err(|e| {
                 error!("Failed to list documents: {}", e);
                 McpError::internal_error(e.to_string(), None)

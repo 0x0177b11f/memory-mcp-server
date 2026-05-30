@@ -1,11 +1,14 @@
 pub mod schema {
     diesel::table! {
         use diesel::sql_types::*;
+        use pgvector::sql_types::*;
 
         documents (id) {
             id -> Int8,
             name -> Text,
+            name_embedding -> Nullable<Vector>,
             description -> Nullable<Text>,
+            description_embedding -> Nullable<Vector>,
             created_at -> Nullable<Timestamp>,
         }
     }

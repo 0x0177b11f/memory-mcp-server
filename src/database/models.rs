@@ -11,7 +11,9 @@ pub mod stored {
     #[diesel(table_name = documents)]
     pub struct NewDocument {
         pub name: String,
+        pub name_embedding: Option<Vector>,
         pub description: Option<String>,
+        pub description_embedding: Option<Vector>,
     }
 
     #[derive(Insertable, Debug)]
@@ -29,12 +31,24 @@ pub mod stored {
 pub mod view {
     use super::*;
 
-    #[derive(Queryable, Serialize, Deserialize, Debug, JsonSchema)]
+    #[derive(Queryable, Selectable, Serialize, Deserialize, Debug, JsonSchema)]
     #[diesel(table_name = documents)]
     pub struct DocumentView {
         pub id: i64,
         pub name: String,
         pub description: Option<String>,
+        pub created_at: Option<chrono::NaiveDateTime>,
+    }
+
+    #[derive(QueryableByName, Debug)]
+    pub struct DocumentSearchRow {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        pub id: i64,
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        pub name: String,
+        #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Text>)]
+        pub description: Option<String>,
+        #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamp>)]
         pub created_at: Option<chrono::NaiveDateTime>,
     }
 }
@@ -61,4 +75,5 @@ pub mod search {
 
 pub use search::SearchResult;
 pub use stored::{NewDocument, NewMemoryItem};
+pub(crate) use view::DocumentSearchRow;
 pub use view::DocumentView;

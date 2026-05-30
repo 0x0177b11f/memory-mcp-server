@@ -20,6 +20,8 @@ pub mod documents {
 
     #[derive(Deserialize, JsonSchema)]
     pub struct ListDocsArgs {
+        #[schemars(description = "Optional keyword to search in document name and description")]
+        pub keyword: Option<String>,
         #[schemars(description = "The maximum number of results to return")]
         pub limit: Option<i64>,
         #[schemars(description = "The offset for pagination")]
