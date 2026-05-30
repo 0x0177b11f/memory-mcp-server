@@ -1,4 +1,4 @@
-use crate::database::schema::schema::*;
+use super::schema::schema::*;
 use diesel::prelude::*;
 use pgvector::Vector;
 use rmcp::schemars::JsonSchema;
