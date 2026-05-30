@@ -2,6 +2,7 @@ use crate::database;
 use crate::model;
 use crate::types::*;
 
+use serde_json::json;
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
@@ -62,10 +63,9 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         info!("Document created with ID: {}", doc_id);
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Document collection '{}' created with ID: {}",
-            args.name, doc_id
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            json!({"name": args.name, "id": doc_id}).to_string()
+        )]))
     }
 
     #[tool(
@@ -116,10 +116,9 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         debug!("Found {} documents", docs.len());
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Document collections: {:?}",
-            docs
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&docs).unwrap_or_else(|e| e.to_string())
+        )]))
     }
 
     #[tool(
@@ -137,10 +136,9 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         info!("Document ID: {} deleted", args.document_id);
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Document collection {} deleted",
-            args.document_id
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            json!({"document_id": args.document_id}).to_string()
+        )]))
     }
 
     #[tool(
@@ -219,11 +217,9 @@ impl ServerState {
         }
 
         info!("Document ID: {} updated", args.document_id);
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Document collection {} updated fields: {}",
-            args.document_id,
-            updated_fields.join(", ")
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            json!({"document_id": args.document_id, "updated_fields": updated_fields}).to_string()
+        )]))
     }
 
     #[tool(
@@ -267,10 +263,9 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         info!("Memory successfully inserted into document ID: {}", args.document_id);
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Memory chunk inserted into document {}",
-            args.document_id
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            json!({"document_id": args.document_id}).to_string()
+        )]))
     }
 
     #[tool(
@@ -289,10 +284,9 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         info!("Memory ID: {} deleted", args.memory_id);
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Memory chunk {} deleted",
-            args.memory_id
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            json!({"memory_id": args.memory_id}).to_string()
+        )]))
     }
 
     #[tool(
@@ -332,10 +326,9 @@ impl ServerState {
             })?;
 
         debug!("Search memory summary returned {} results", results.len());
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Search results: {:?}",
-            results
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string())
+        )]))
     }
 
     #[tool(
@@ -374,10 +367,9 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         debug!("Search memory content returned {} results", results.len());
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Search results: {:?}",
-            results
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string())
+        )]))
     }
 
     #[tool(
@@ -428,10 +420,9 @@ impl ServerState {
             })?;
 
         debug!("Search memory returned {} results", results.len());
-        Ok(CallToolResult::success(vec![Content::text(format!(
-            "Search results: {:?}",
-            results
-        ))]))
+        Ok(CallToolResult::success(vec![Content::text(
+            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string())
+        )]))
     }
 }
 
