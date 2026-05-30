@@ -114,4 +114,92 @@ mod tests {
         db.delete_memory(mem_id).unwrap();
         db.delete_document(doc_id).unwrap();
     }
+
+    #[test]
+    fn test_update_document_name_and_description() {
+        let db = match get_test_db() {
+            Some(db) => db,
+            None => return,
+        };
+        db.setup_database().unwrap();
+
+        let original_name = "test_update_doc_original";
+        let updated_name = "test_update_doc_new_name";
+        let original_description = "Original description";
+        let updated_description = "Updated description";
+
+        // Best-effort cleanup for deterministic test runs.
+        let docs = db.list_documents(None, None, None, None).unwrap();
+        for d in docs {
+            if d.name == original_name || d.name == updated_name {
+                let _ = db.delete_document(d.id);
+            }
+        }
+
+        let name_embedding = vec![0.1; 384];
+        let desc_embedding = vec![0.2; 384];
+        let doc_id = db
+            .create_document(
+                original_name,
+                &name_embedding,
+                original_description,
+                &desc_embedding,
+            )
+            .unwrap();
+
+        let updated_name_embedding = vec![0.3; 384];
+        db.update_document(
+            doc_id,
+            Some(updated_name),
+            Some(&updated_name_embedding),
+            None,
+            None,
+        )
+        .unwrap();
+
+        let docs = db.list_documents(None, None, None, None).unwrap();
+        let after_name_update = docs.iter().find(|d| d.id == doc_id).unwrap();
+        assert_eq!(after_name_update.name, updated_name);
+        assert_eq!(after_name_update.description.as_deref(), Some(original_description));
+
+        let updated_desc_embedding = vec![0.4; 384];
+        db.update_document(
+            doc_id,
+            None,
+            None,
+            Some(updated_description),
+            Some(&updated_desc_embedding),
+        )
+        .unwrap();
+
+        let docs = db.list_documents(None, None, None, None).unwrap();
+        let after_description_update = docs.iter().find(|d| d.id == doc_id).unwrap();
+        assert_eq!(after_description_update.name, updated_name);
+        assert_eq!(
+            after_description_update.description.as_deref(),
+            Some(updated_description)
+        );
+
+        db.delete_document(doc_id).unwrap();
+    }
+
+    #[test]
+    fn test_update_document_not_found_returns_error() {
+        let db = match get_test_db() {
+            Some(db) => db,
+            None => return,
+        };
+        db.setup_database().unwrap();
+
+        let updated_name_embedding = vec![0.3; 384];
+        let result = db.update_document(
+            -1,
+            Some("does-not-exist"),
+            Some(&updated_name_embedding),
+            None,
+            None,
+        );
+
+        assert!(result.is_err());
+    }
 }
