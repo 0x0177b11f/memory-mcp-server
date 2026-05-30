@@ -31,6 +31,15 @@ mod tests {
     }
 
     #[test]
+    fn test_migrate_database() {
+        let db = match get_test_db() {
+            Some(db) => db,
+            None => return,
+        };
+        assert!(db.migrate_database().is_ok());
+    }
+
+    #[test]
     fn test_create_and_delete_document() {
         let db = match get_test_db() {
             Some(db) => db,
@@ -40,21 +49,25 @@ mod tests {
         let doc_name = "test_doc_collection";
         
         // Clean up first if exists
-        let tables = db.list_documents(None, None).unwrap();
+        let tables = db.list_documents(None, None, None, None).unwrap();
         for t in tables {
             if t.name == doc_name {
                 let _ = db.delete_document(t.id);
             }
         }
 
-        let doc_id = db.create_document(doc_name, "Test description").expect("Failed to create document");
+        let name_embedding = vec![0.1; 384];
+        let desc_embedding = vec![0.2; 384];
+        let doc_id = db
+            .create_document(doc_name, &name_embedding, "Test description", &desc_embedding)
+            .expect("Failed to create document");
         
-        let tables = db.list_documents(None, None).expect("Failed to list documents");
+        let tables = db.list_documents(None, None, None, None).expect("Failed to list documents");
         assert!(tables.iter().any(|t| t.id == doc_id));
 
         assert!(db.delete_document(doc_id).is_ok());
         
-        let tables = db.list_documents(None, None).expect("Failed to list documents");
+        let tables = db.list_documents(None, None, None, None).expect("Failed to list documents");
         assert!(!tables.iter().any(|t| t.id == doc_id));
     }
 
@@ -67,14 +80,18 @@ mod tests {
         db.setup_database().unwrap();
         
         let doc_name = "test_memory_collection";
-        let tables = db.list_documents(None, None).unwrap();
+        let tables = db.list_documents(None, None, None, None).unwrap();
         for t in tables {
             if t.name == doc_name {
                 let _ = db.delete_document(t.id);
             }
         }
-        
-        let doc_id = db.create_document(doc_name, "Test").unwrap();
+
+        let name_embedding = vec![0.1; 384];
+        let desc_embedding = vec![0.2; 384];
+        let doc_id = db
+            .create_document(doc_name, &name_embedding, "Test", &desc_embedding)
+            .unwrap();
 
         let summary_embedding = vec![0.1; 384];
         let content_embedding = vec![0.2; 384];

@@ -31,9 +31,10 @@ impl Database {
 
     pub fn setup_database(&self) -> anyhow::Result<()> {
         info!("Setting up database");
-        let mut conn = self.get_conn()?;
-        
+
         debug!("Creating extensions if not exist");
+        let mut conn = self.get_conn()?;
+
         sql_query("CREATE EXTENSION IF NOT EXISTS vector").execute(&mut conn)?;
         sql_query("CREATE EXTENSION IF NOT EXISTS pg_trgm").execute(&mut conn)?;
 
@@ -41,8 +42,10 @@ impl Database {
         sql_query(
             "CREATE TABLE IF NOT EXISTS documents (
                 id bigserial PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                name_embedding vector(384),
                 description TEXT,
+                description_embedding vector(384),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )"
         ).execute(&mut conn)?;
@@ -62,8 +65,29 @@ impl Database {
         ).execute(&mut conn)?;
 
         debug!("Creating indexes");
+
         sql_query(
-            "CREATE INDEX IF NOT EXISTS memory_items_summary_embedding_idx 
+            "CREATE INDEX IF NOT EXISTS documents_name_embedding_idx
+             ON documents USING hnsw (name_embedding vector_cosine_ops)"
+        ).execute(&mut conn)?;
+
+        sql_query(
+            "CREATE INDEX IF NOT EXISTS documents_description_embedding_idx 
+             ON documents USING hnsw (description_embedding vector_cosine_ops)"
+        ).execute(&mut conn)?;
+
+        sql_query(
+            "CREATE INDEX IF NOT EXISTS documents_name_trgm_idx 
+             ON documents USING gin (name gin_trgm_ops)"
+        ).execute(&mut conn)?;
+
+        sql_query(
+            "CREATE INDEX IF NOT EXISTS documents_description_trgm_idx 
+             ON documents USING gin (description gin_trgm_ops)"
+        ).execute(&mut conn)?;
+
+        sql_query(
+            "CREATE INDEX IF NOT EXISTS memory_items_summary_embedding_idx
              ON memory_items USING hnsw (summary_embedding vector_cosine_ops)"
         ).execute(&mut conn)?;
 
@@ -87,17 +111,41 @@ impl Database {
              ON memory_items USING gin (content gin_trgm_ops)"
         ).execute(&mut conn)?;
 
+        self.migrate_database()?;
         info!("Database setup complete");
         Ok(())
     }
 
-    pub fn create_document(&self, doc_name: &str, doc_desc: &str) -> anyhow::Result<i64> {
+    pub fn migrate_database(&self) -> anyhow::Result<()> {
+        info!("Running database migrations");
+        let mut conn = self.get_conn()?;
+
+        // 0.2.0 migration
+        //// Add embedding columns to documents table
+        sql_query(
+            "ALTER TABLE documents 
+             ADD COLUMN IF NOT EXISTS name_embedding vector(384), 
+             ADD COLUMN IF NOT EXISTS description_embedding vector(384)"
+        ).execute(&mut conn)?;
+
+        //// Remove documents.name UNIQUE constraint if exists
+        sql_query(
+            "ALTER TABLE IF EXISTS documents DROP CONSTRAINT IF EXISTS documents_name_key;"
+        ).execute(&mut conn)?;
+
+        info!("Database migrations complete");
+        Ok(())
+    }
+
+    pub fn create_document(&self, doc_name: &str, name_emb: &[f32], doc_desc: &str, desc_emb: &[f32]) -> anyhow::Result<i64> {
         let mut conn = self.get_conn()?;
         use self::schema::schema::documents::dsl::*;
 
         let new_doc = NewDocument {
             name: doc_name.to_string(),
+            name_embedding: Some(Vector::from(name_emb.to_vec())),
             description: Some(doc_desc.to_string()),
+            description_embedding: Some(Vector::from(desc_emb.to_vec())),
         };
 
         let inserted_doc_id: i64 = diesel::insert_into(documents)
@@ -108,19 +156,91 @@ impl Database {
         Ok(inserted_doc_id)
     }
 
-    pub fn list_documents(&self, limit: Option<i64>, offset: Option<i64>) -> anyhow::Result<Vec<DocumentView>> {
+    pub fn list_documents(
+        &self,
+        limit: Option<i64>,
+        offset: Option<i64>,
+        keyword: Option<&str>,
+        keyword_emb: Option<&[f32]>,
+    ) -> anyhow::Result<Vec<DocumentView>> {
         let mut conn = self.get_conn()?;
         use self::schema::schema::documents::dsl::*;
-        
-        let mut query = documents.into_boxed();
-        
-        if let Some(l) = limit {
-            query = query.limit(l);
+
+        let limit_value = limit.unwrap_or(5);
+        let offset_value = offset.unwrap_or(0);
+
+        if let Some(k) = keyword {
+            let trimmed = k.trim();
+            if !trimmed.is_empty() {
+                if let Some(emb) = keyword_emb {
+                    let rrf_limit = (limit_value + offset_value) * 10;
+                    let query = r#"
+                        WITH vector_search AS (
+                            SELECT id, ROW_NUMBER() OVER (
+                                ORDER BY (name_embedding <#> $1) + (COALESCE(description_embedding, name_embedding) <#> $1)
+                            ) AS vector_rank
+                            FROM documents
+                            WHERE name_embedding IS NOT NULL OR description_embedding IS NOT NULL
+                            LIMIT $4
+                        ),
+                        keyword_search AS (
+                            SELECT id, ROW_NUMBER() OVER (
+                                ORDER BY similarity(name, $2) + similarity(COALESCE(description, ''), $2) DESC
+                            ) AS keyword_rank
+                            FROM documents
+                            WHERE name % $2 OR COALESCE(description, '') % $2
+                            LIMIT $4
+                        )
+                        SELECT d.id, d.name, d.description, d.created_at
+                        FROM documents d
+                        LEFT JOIN vector_search v ON d.id = v.id
+                        LEFT JOIN keyword_search k ON d.id = k.id
+                        WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                        ORDER BY (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0)) DESC
+                        LIMIT $3 OFFSET $5
+                    "#;
+
+                    let rows = sql_query(query)
+                        .bind::<pgvector::sql_types::Vector, _>(Vector::from(emb.to_vec()))
+                        .bind::<diesel::sql_types::Text, _>(trimmed)
+                        .bind::<BigInt, _>(limit_value)
+                        .bind::<BigInt, _>(rrf_limit)
+                        .bind::<BigInt, _>(offset_value)
+                        .load::<DocumentSearchRow>(&mut conn)?;
+
+                    let results = rows
+                        .into_iter()
+                        .map(|row| DocumentView {
+                            id: row.id,
+                            name: row.name,
+                            description: row.description,
+                            created_at: row.created_at,
+                        })
+                        .collect();
+                    return Ok(results);
+                }
+
+                let pattern = format!("%{}%", trimmed);
+                let mut fallback_query = documents
+                    .select(DocumentView::as_select())
+                    .filter(
+                        name
+                            .ilike(pattern.clone())
+                            .or(description.is_not_null().and(description.ilike(pattern))),
+                    )
+                    .into_boxed();
+
+                fallback_query = fallback_query.limit(limit_value).offset(offset_value);
+                let results = fallback_query.load::<DocumentView>(&mut conn)?;
+                return Ok(results);
+            }
         }
         
-        if let Some(o) = offset {
-            query = query.offset(o);
-        }
+        let mut query = documents
+            .select(DocumentView::as_select())
+            .into_boxed();
+        
+        query = query.limit(limit_value).offset(offset_value);
         
         let results = query.load::<DocumentView>(&mut conn)?;
         Ok(results)
