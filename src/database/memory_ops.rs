@@ -7,6 +7,58 @@ use super::Database;
 use super::models::*;
 
 impl Database {
+    fn build_ranked_search_query(
+        vector_order_expr: &str,
+        vector_where_clause: &str,
+        keyword_order_expr: &str,
+        keyword_where_clause: &str,
+        rrf_limit: i64,
+        min_distance_param: &str,
+        limit_param: &str,
+        offset_clause: &str,
+    ) -> String {
+        format!(
+            r#"
+            WITH vector_search AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY {}) as vector_rank
+                FROM memory_items WHERE {}
+                ORDER BY {}
+                LIMIT {}
+            ),
+            keyword_search AS (
+                SELECT id, ROW_NUMBER() OVER (ORDER BY {} DESC) as keyword_rank
+                FROM memory_items WHERE {}
+                ORDER BY {} DESC
+                LIMIT {}
+            ),
+            ranked AS (
+                SELECT m.id, m.document_id, m.summary, m.content, m.metadata,
+                       (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0))::float8 as distance
+                FROM memory_items m
+                LEFT JOIN vector_search v ON m.id = v.id
+                LEFT JOIN keyword_search k ON m.id = k.id
+                WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+            )
+            SELECT *
+            FROM ranked
+            WHERE distance >= {}
+            ORDER BY distance DESC
+            LIMIT {}{}
+            "#,
+            vector_order_expr,
+            vector_where_clause,
+            vector_order_expr,
+            rrf_limit,
+            keyword_order_expr,
+            keyword_where_clause,
+            keyword_order_expr,
+            rrf_limit,
+            min_distance_param,
+            limit_param,
+            offset_clause
+        )
+    }
+
     pub fn insert_memory(
         &self,
         doc_id: i64,
@@ -79,42 +131,19 @@ impl Database {
         let rrf_limit = (limit + offset.unwrap_or(0)) * 10;
         let offset_clause = offset.map(|o| format!(" OFFSET {}", o)).unwrap_or_default();
 
-        let query = format!(
-            r#"
-            WITH vector_search AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY {} <#> $1) as vector_rank
-                FROM memory_items WHERE {}
-                ORDER BY {} <#> $1
-                LIMIT {}
-            ),
-            keyword_search AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY similarity({}, $2) DESC) as keyword_rank
-                FROM memory_items WHERE {} AND {} % $2
-                ORDER BY similarity({}, $2) DESC
-                LIMIT {}
-            )
-            SELECT m.id, m.document_id, m.summary, m.content, m.metadata,
-                   (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0))::float8 as distance
-            FROM memory_items m
-            LEFT JOIN vector_search v ON m.id = v.id
-            LEFT JOIN keyword_search k ON m.id = k.id
-                        WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
-                            AND (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0)) >= {}
-            ORDER BY distance DESC
-            LIMIT {}{}
-            "#,
-            emb_col,
-            filter_clause,
-            emb_col,
-            rrf_limit,
-            column,
-            filter_clause,
-            column,
-            column,
+        let vector_order_expr = format!("{} <#> $1", emb_col);
+        let keyword_order_expr = format!("similarity({}, $2)", column);
+        let keyword_where_clause = format!("{} AND {} % $2", filter_clause, column);
+
+        let query = Self::build_ranked_search_query(
+            &vector_order_expr,
+            &filter_clause,
+            &keyword_order_expr,
+            &keyword_where_clause,
             rrf_limit,
             min_distance_param,
             limit_param,
-            offset_clause
+            &offset_clause,
         );
 
         if let Some(meta) = metadata_filter {
@@ -167,37 +196,19 @@ impl Database {
         let rrf_limit = (limit + offset.unwrap_or(0)) * 10;
         let offset_clause = offset.map(|o| format!(" OFFSET {}", o)).unwrap_or_default();
 
-        let query = format!(
-            r#"
-            WITH vector_search AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY (summary_embedding <#> $1) + (content_embedding <#> $2)) as vector_rank
-                FROM memory_items WHERE {}
-                ORDER BY (summary_embedding <#> $1) + (content_embedding <#> $2)
-                LIMIT {}
-            ),
-            keyword_search AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY similarity(summary, $3) + similarity(content, $4) DESC) as keyword_rank
-                FROM memory_items WHERE {} AND (summary % $3 OR content % $4)
-                ORDER BY similarity(summary, $3) + similarity(content, $4) DESC
-                LIMIT {}
-            )
-            SELECT m.id, m.document_id, m.summary, m.content, m.metadata,
-                   (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0))::float8 as distance
-            FROM memory_items m
-            LEFT JOIN vector_search v ON m.id = v.id
-            LEFT JOIN keyword_search k ON m.id = k.id
-                        WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
-                            AND (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0)) >= {}
-            ORDER BY distance DESC
-            LIMIT {}{}
-            "#,
-            filter_clause,
-            rrf_limit,
-            filter_clause,
+        let vector_order_expr = "(summary_embedding <#> $1) + (content_embedding <#> $2)";
+        let keyword_order_expr = "similarity(summary, $3) + similarity(content, $4)";
+        let keyword_where_clause = format!("{} AND (summary % $3 OR content % $4)", filter_clause);
+
+        let query = Self::build_ranked_search_query(
+            vector_order_expr,
+            &filter_clause,
+            keyword_order_expr,
+            &keyword_where_clause,
             rrf_limit,
             min_distance_param,
             limit_param,
-            offset_clause
+            &offset_clause,
         );
 
         if let Some(meta) = metadata_filter {
