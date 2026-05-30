@@ -104,7 +104,8 @@ impl Database {
                 FROM memory_items m
                 LEFT JOIN vector_search v ON m.id = v.id
                 LEFT JOIN keyword_search k ON m.id = k.id
-                WHERE v.id IS NOT NULL OR k.id IS NOT NULL
+                WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
+                    AND {}
             )
             SELECT *
             FROM ranked
@@ -120,6 +121,7 @@ impl Database {
             keyword_where_clause,
             keyword_order_expr,
             rrf_limit,
+            filter_clause,
             min_distance_param,
             limit_param,
             offset_clause
@@ -224,7 +226,8 @@ impl Database {
                 LEFT JOIN content_vector cv ON m.id = cv.id
                 LEFT JOIN summary_keyword sk ON m.id = sk.id
                 LEFT JOIN content_keyword ck ON m.id = ck.id
-                WHERE sv.id IS NOT NULL OR cv.id IS NOT NULL OR sk.id IS NOT NULL OR ck.id IS NOT NULL
+                WHERE (sv.id IS NOT NULL OR cv.id IS NOT NULL OR sk.id IS NOT NULL OR ck.id IS NOT NULL)
+                    AND {}
             )
             SELECT *
             FROM ranked
@@ -240,6 +243,7 @@ impl Database {
             rrf_limit,
             filter_clause,
             rrf_limit,
+            filter_clause,
             min_distance_param,
             limit_param,
             offset_clause
