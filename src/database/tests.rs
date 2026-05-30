@@ -119,7 +119,7 @@ mod tests {
 
         let results = db
             .search_memory(
-                Some(doc_id),
+                doc_id,
                 summary_embedding,
                 "Test Summary",
                 "summary",
@@ -283,7 +283,7 @@ mod tests {
 
         let results = db
             .search_memory(
-                Some(doc_id),
+                doc_id,
                 query_embedding,
                 "recall target memory",
                 "summary",
@@ -438,7 +438,7 @@ mod tests {
 
         let results = db
             .search_memory(
-                Some(doc_id),
+                doc_id,
                 query_embedding,
                 "tenant",
                 "summary",
@@ -490,7 +490,7 @@ mod tests {
 
         let first_page = db
             .search_memory(
-                Some(doc_id),
+                doc_id,
                 query_embedding.clone(),
                 "page target memory",
                 "summary",
@@ -503,7 +503,7 @@ mod tests {
 
         let second_page = db
             .search_memory(
-                Some(doc_id),
+                doc_id,
                 query_embedding,
                 "page target memory",
                 "summary",
@@ -556,7 +556,7 @@ mod tests {
         // RRF distance is much smaller than 1.0 in this query design, so this threshold must filter all.
         let results = db
             .search_memory(
-                Some(doc_id),
+                doc_id,
                 query_embedding,
                 "distance target",
                 "summary",
