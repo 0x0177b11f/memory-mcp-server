@@ -366,7 +366,7 @@ mod tests {
 
         let results = db
             .search_memory_multi(
-                Some(doc_id),
+                doc_id,
                 query_sum_embedding,
                 query_cont_embedding,
                 "multi recall summary",
@@ -614,7 +614,7 @@ mod tests {
 
         let results = db
             .search_memory_multi(
-                Some(doc_id),
+                doc_id,
                 sum_emb,
                 cont_emb,
                 "multi tenant",

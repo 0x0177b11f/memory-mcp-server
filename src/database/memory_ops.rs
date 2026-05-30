@@ -149,7 +149,7 @@ impl Database {
 
     pub fn search_memory_multi(
         &self,
-        doc_id: Option<i64>,
+        doc_id: i64,
         sum_emb: Vec<f32>,
         cont_emb: Vec<f32>,
         query_summary: &str,
@@ -161,14 +161,11 @@ impl Database {
     ) -> anyhow::Result<Vec<SearchResult>> {
         let mut conn = self.get_conn()?;
 
-        let mut filter_clause = "1=1".to_string();
-        if let Some(d_id) = doc_id {
-            filter_clause.push_str(&format!(" AND document_id = {}", d_id));
-        }
+        let mut materialized_view_clause = format!("document_id = {}", doc_id);
 
         let mut bind_metadata = false;
         if metadata_filter.is_some() {
-            filter_clause.push_str(" AND metadata @> $5");
+            materialized_view_clause.push_str(" AND metadata @> $5");
             bind_metadata = true;
         }
 
@@ -180,32 +177,39 @@ impl Database {
         let query = format!(
             r#"
             WITH
+            scope AS MATERIALIZED(
+                SELECT id FROM memory_items WHERE {}
+            ),
             summary_vector AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY summary_embedding <#> $1) AS rank
-                FROM memory_items
-                WHERE {} AND summary_embedding IS NOT NULL
-                ORDER BY summary_embedding <#> $1
+                SELECT s.id, ROW_NUMBER() OVER (ORDER BY m.summary_embedding <#> $1) AS rank
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
+                WHERE m.summary_embedding IS NOT NULL
+                ORDER BY m.summary_embedding <#> $1
                 LIMIT {}
             ),
             content_vector AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY content_embedding <#> $2) AS rank
-                FROM memory_items
-                WHERE {} AND content_embedding IS NOT NULL
-                ORDER BY content_embedding <#> $2
+                SELECT s.id, ROW_NUMBER() OVER (ORDER BY m.content_embedding <#> $2) AS rank
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
+                WHERE m.content_embedding IS NOT NULL
+                ORDER BY m.content_embedding <#> $2
                 LIMIT {}
             ),
             summary_keyword AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY similarity(summary, $3) DESC) AS rank
-                FROM memory_items
-                WHERE {} AND summary % $3
-                ORDER BY similarity(summary, $3) DESC
+                SELECT s.id, ROW_NUMBER() OVER (ORDER BY similarity(m.summary, $3) DESC) AS rank
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
+                WHERE m.summary % $3
+                ORDER BY similarity(m.summary, $3) DESC
                 LIMIT {}
             ),
             content_keyword AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY similarity(content, $4) DESC) AS rank
-                FROM memory_items
-                WHERE {} AND content % $4
-                ORDER BY similarity(content, $4) DESC
+                SELECT s.id, ROW_NUMBER() OVER (ORDER BY similarity(m.content, $4) DESC) AS rank
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
+                WHERE m.content % $4
+                ORDER BY similarity(m.content, $4) DESC
                 LIMIT {}
             ),
             ranked AS (
@@ -221,13 +225,13 @@ impl Database {
                         COALESCE(1.0 / (60 + sk.rank), 0.0) +
                         COALESCE(1.0 / (60 + ck.rank), 0.0)
                     )::float8 AS distance
-                FROM memory_items m
+                FROM scope s
+                JOIN memory_items m ON s.id = m.id
                 LEFT JOIN summary_vector sv ON m.id = sv.id
                 LEFT JOIN content_vector cv ON m.id = cv.id
                 LEFT JOIN summary_keyword sk ON m.id = sk.id
                 LEFT JOIN content_keyword ck ON m.id = ck.id
                 WHERE (sv.id IS NOT NULL OR cv.id IS NOT NULL OR sk.id IS NOT NULL OR ck.id IS NOT NULL)
-                    AND {}
             )
             SELECT *
             FROM ranked
@@ -235,15 +239,11 @@ impl Database {
             ORDER BY distance DESC
             LIMIT {}{}
             "#,
-            filter_clause,
+            materialized_view_clause,
             rrf_limit,
-            filter_clause,
             rrf_limit,
-            filter_clause,
             rrf_limit,
-            filter_clause,
             rrf_limit,
-            filter_clause,
             min_distance_param,
             limit_param,
             offset_clause
