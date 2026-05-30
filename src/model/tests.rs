@@ -42,7 +42,8 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/assets/test_embedding.json"
         ));
-        let expected: Vec<f32> = serde_json::from_slice(expected_bytes).expect("Failed to parse test embedding JSON");
+        let expected: Vec<f32> =
+            serde_json::from_slice(expected_bytes).expect("Failed to parse test embedding JSON");
 
         for (i, (&value, &expected_val)) in embedding.iter().zip(expected.iter()).enumerate() {
             assert!(

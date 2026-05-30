@@ -47,7 +47,7 @@ mod tests {
         };
         db.setup_database().unwrap();
         let doc_name = "test_doc_collection";
-        
+
         // Clean up first if exists
         let tables = db.list_documents(None, None, None, None).unwrap();
         for t in tables {
@@ -59,15 +59,24 @@ mod tests {
         let name_embedding = vec![0.1; 384];
         let desc_embedding = vec![0.2; 384];
         let doc_id = db
-            .create_document(doc_name, &name_embedding, "Test description", &desc_embedding)
+            .create_document(
+                doc_name,
+                &name_embedding,
+                "Test description",
+                &desc_embedding,
+            )
             .expect("Failed to create document");
-        
-        let tables = db.list_documents(None, None, None, None).expect("Failed to list documents");
+
+        let tables = db
+            .list_documents(None, None, None, None)
+            .expect("Failed to list documents");
         assert!(tables.iter().any(|t| t.id == doc_id));
 
         assert!(db.delete_document(doc_id).is_ok());
-        
-        let tables = db.list_documents(None, None, None, None).expect("Failed to list documents");
+
+        let tables = db
+            .list_documents(None, None, None, None)
+            .expect("Failed to list documents");
         assert!(!tables.iter().any(|t| t.id == doc_id));
     }
 
@@ -78,7 +87,7 @@ mod tests {
             None => return,
         };
         db.setup_database().unwrap();
-        
+
         let doc_name = "test_memory_collection";
         let tables = db.list_documents(None, None, None, None).unwrap();
         for t in tables {
@@ -96,18 +105,30 @@ mod tests {
         let summary_embedding = vec![0.1; 384];
         let content_embedding = vec![0.2; 384];
 
-        let mem_id = db.insert_memory(
-            doc_id,
-            "Test Summary",
-            summary_embedding.clone(),
-            "Test Content",
-            content_embedding.clone(),
-            None,
-        ).expect("Failed to insert memory");
+        let mem_id = db
+            .insert_memory(
+                doc_id,
+                "Test Summary",
+                summary_embedding.clone(),
+                "Test Content",
+                content_embedding.clone(),
+                None,
+            )
+            .expect("Failed to insert memory");
 
-        let results = db.search_memory(Some(doc_id), summary_embedding, "Test Summary", "summary", 1, None, None)
+        let results = db
+            .search_memory(
+                Some(doc_id),
+                summary_embedding,
+                "Test Summary",
+                "summary",
+                1,
+                None,
+                0.0,
+                None,
+            )
             .expect("Search failed");
-        
+
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].summary, "Test Summary");
 
@@ -160,7 +181,10 @@ mod tests {
         let docs = db.list_documents(None, None, None, None).unwrap();
         let after_name_update = docs.iter().find(|d| d.id == doc_id).unwrap();
         assert_eq!(after_name_update.name, updated_name);
-        assert_eq!(after_name_update.description.as_deref(), Some(original_description));
+        assert_eq!(
+            after_name_update.description.as_deref(),
+            Some(original_description)
+        );
 
         let updated_desc_embedding = vec![0.4; 384];
         db.update_document(

@@ -1,9 +1,9 @@
-mod schema;
-mod models;
 mod documents_ops;
 mod init;
 mod memory_ops;
 mod migration;
+mod models;
+mod schema;
 
 #[cfg(test)]
 mod tests;
@@ -23,7 +23,10 @@ impl Database {
         Ok(Self { pool })
     }
 
-    pub fn get_conn(&self) -> anyhow::Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<PgConnection>>> {
+    pub fn get_conn(
+        &self,
+    ) -> anyhow::Result<diesel::r2d2::PooledConnection<diesel::r2d2::ConnectionManager<PgConnection>>>
+    {
         Ok(self.pool.get()?)
     }
 }

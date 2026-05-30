@@ -3,8 +3,8 @@ use diesel::sql_query;
 use diesel::sql_types::*;
 use pgvector::Vector;
 
-use super::models::*;
 use super::Database;
+use super::models::*;
 
 impl Database {
     pub fn create_document(
@@ -100,8 +100,7 @@ impl Database {
                 let fallback_query = documents
                     .select(DocumentView::as_select())
                     .filter(
-                        name
-                            .ilike(pattern.clone())
+                        name.ilike(pattern.clone())
                             .or(description.is_not_null().and(description.ilike(pattern))),
                     )
                     .into_boxed()
