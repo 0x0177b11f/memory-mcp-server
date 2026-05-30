@@ -163,8 +163,9 @@ CREATE TABLE memory_items (
 | Tool Name | Primary Function | Arguments | Internal Execution Logic |
 | --- | --- | --- | --- |
 | **`create_document`** | Create a new document collection category | `name` (string) `description` (string) | Registers a new document collection category in the `documents` table and returns the assigned ID. |
-| **`list_documents`** | Get a list of all current document collections | None | Queries and returns list information of all `documents`, helping the Agent understand existing categories. |
+| **`list_documents`** | Get a list of current document collections | `keyword` (string, optional) `limit` (integer, optional) `offset` (integer, optional) | Supports keyword retrieval (hybrid semantic + trigram) with pagination; returns matched `documents`. |
 | **`delete_document`** | Completely delete a document collection and related chunks | `document_id` (integer) | Deletes records from `documents`, utilizing CASCADE deletion to clean up chunk data in `memory_items` simultaneously. |
+| **`update_document`** | Update document collection name and/or description | `document_id` (integer) `name` (string, optional) `description` (string, optional) | Updates provided fields by ID; only submitted fields are modified, and related embeddings are regenerated. |
 | **`insert_memory`** | Insert a new vector memory chunk | `document_id` (integer) `summary` (string) `content` (string) | Calls `burn` to convert text into a 384-dimensional vector, inserting it along with the text and foreign key into the `memory_items` table. |
 | **`delete_memory`** | **Remove a single specific memory chunk** | `memory_id` (integer) | Precisely deletes the specified `memory_items` record by primary key. Suitable for erasing outdated or incorrect memories. |
 | **`search_memory_summary`** | Search memory by summary similarity | `document_id` (integer, optional) `query_text` (string) `limit` (integer, optional) | Vectorizes the query text, performs vector retrieval based on `summary` in `memory_items` (optionally limited to a document collection), and returns Top-K records. |

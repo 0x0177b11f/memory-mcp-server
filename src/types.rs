@@ -19,6 +19,16 @@ pub mod documents {
     }
 
     #[derive(Deserialize, JsonSchema)]
+    pub struct UpdateDocArgs {
+        #[schemars(description = "The ID of the document collection to update")]
+        pub document_id: i64,
+        #[schemars(description = "The updated name of the document collection")]
+        pub name: Option<String>,
+        #[schemars(description = "The updated description of the document collection")]
+        pub description: Option<String>,
+    }
+
+    #[derive(Deserialize, JsonSchema)]
     pub struct ListDocsArgs {
         #[schemars(description = "Optional keyword to search in document name and description")]
         pub keyword: Option<String>,
@@ -81,5 +91,5 @@ pub mod memory_items {
     }
 }
 
-pub use documents::{CreateDocArgs, DeleteDocArgs, ListDocsArgs};
+pub use documents::{CreateDocArgs, DeleteDocArgs, ListDocsArgs, UpdateDocArgs};
 pub use memory_items::{DeleteMemoryArgs, InsertMemoryArgs, SearchMemoryArgs, SearchMemoryMultiArgs};
