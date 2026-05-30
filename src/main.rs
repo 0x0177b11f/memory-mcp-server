@@ -49,6 +49,10 @@ struct Cli {
     /// Allowed origins (comma-separated)
     #[arg(long, env = "ALLOWED_ORIGINS", default_value = "")]
     allowed_origins: Option<String>,
+
+    /// Run database migrations only, then exit
+    #[arg(long, default_value_t = false)]
+    migrate_only: bool,
 }
 
 #[tokio::main]
@@ -66,16 +70,22 @@ pub async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     tracing::info!("Starting memory-mcp-server with args: {:?}", cli);
 
-    // load the model
-    let model = Arc::new(Mutex::new(model::helper::init_model(cli.gpu)?));
-
     // connect to PostgreSQL from environment variables
     tracing::info!("Connecting to database...");
     let db = Arc::new(
         database::Database::new(&cli.db_url)?,
     );
+    if cli.migrate_only {
+        db.migrate_database()?;
+        tracing::info!("Database migration completed (--migrate-only). Exiting.");
+        return Ok(());
+    }
+
     db.setup_database()?;
     tracing::info!("Database connected and setup completed.");
+
+    // load the model
+    let model = Arc::new(Mutex::new(model::helper::init_model(cli.gpu)?));
 
     let state = ServerState::new(model.clone(), db.clone(), cli.max_search_results);
 
