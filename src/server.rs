@@ -144,6 +144,89 @@ impl ServerState {
     }
 
     #[tool(
+        name = "update_document",
+        description = "Update a document collection name and/or description by ID"
+    )]
+    pub async fn update_document(
+        &self,
+        Parameters(args): Parameters<UpdateDocArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        info!("Updating document ID: {}", args.document_id);
+
+        let name = args.name.as_deref().map(str::trim).filter(|value| !value.is_empty());
+        let description = args
+            .description
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        if name.is_none() && description.is_none() {
+            return Err(McpError::internal_error(
+                "At least one non-empty field must be provided: name or description",
+                None,
+            ));
+        }
+
+        let name_emb = if let Some(new_name) = name {
+            Some(
+                self.model
+                    .lock()
+                    .await
+                    .embedding_text(new_name)
+                    .map_err(|e| {
+                        error!("Failed to embed updated name: {}", e);
+                        McpError::internal_error(e, None)
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        let description_emb = if let Some(new_description) = description {
+            Some(
+                self.model
+                    .lock()
+                    .await
+                    .embedding_text(new_description)
+                    .map_err(|e| {
+                        error!("Failed to embed updated description: {}", e);
+                        McpError::internal_error(e, None)
+                    })?,
+            )
+        } else {
+            None
+        };
+
+        self.db
+            .update_document(
+                args.document_id,
+                name,
+                name_emb.as_deref(),
+                description,
+                description_emb.as_deref(),
+            )
+            .map_err(|e| {
+                error!("Failed to update document: {}", e);
+                McpError::internal_error(e.to_string(), None)
+            })?;
+
+        let mut updated_fields = Vec::new();
+        if name.is_some() {
+            updated_fields.push("name");
+        }
+        if description.is_some() {
+            updated_fields.push("description");
+        }
+
+        info!("Document ID: {} updated", args.document_id);
+        Ok(CallToolResult::success(vec![Content::text(format!(
+            "Document collection {} updated fields: {}",
+            args.document_id,
+            updated_fields.join(", ")
+        ))]))
+    }
+
+    #[tool(
         name = "insert_memory",
         description = "Insert a memory chunk into a document collection"
     )]

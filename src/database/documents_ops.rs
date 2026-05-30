@@ -130,4 +130,42 @@ impl Database {
 
         Ok(())
     }
+
+    pub fn update_document(
+        &self,
+        doc_id: i64,
+        doc_name: Option<&str>,
+        name_emb: Option<&[f32]>,
+        doc_desc: Option<&str>,
+        desc_emb: Option<&[f32]>,
+    ) -> anyhow::Result<()> {
+        let mut conn = self.get_conn()?;
+
+        let query = r#"
+            UPDATE documents
+            SET
+                name = COALESCE($2, name),
+                name_embedding = COALESCE($3, name_embedding),
+                description = COALESCE($4, description),
+                description_embedding = COALESCE($5, description_embedding)
+            WHERE id = $1
+        "#;
+
+        let name_emb_vector = name_emb.map(|v| Vector::from(v.to_vec()));
+        let desc_emb_vector = desc_emb.map(|v| Vector::from(v.to_vec()));
+
+        let updated_rows = sql_query(query)
+            .bind::<BigInt, _>(doc_id)
+            .bind::<Nullable<Text>, _>(doc_name)
+            .bind::<Nullable<pgvector::sql_types::Vector>, _>(name_emb_vector)
+            .bind::<Nullable<Text>, _>(doc_desc)
+            .bind::<Nullable<pgvector::sql_types::Vector>, _>(desc_emb_vector)
+            .execute(&mut conn)?;
+
+        if updated_rows == 0 {
+            return Err(anyhow::anyhow!("Document collection {} not found", doc_id));
+        }
+
+        Ok(())
+    }
 }
