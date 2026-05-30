@@ -57,6 +57,12 @@ Enable GPU at runtime (only valid when built with `--features gpu`):
 cargo run --release --features gpu -- --gpu
 ```
 
+Run database migrations only (do not start MCP server):
+
+```bash
+cargo run --release -- --migrate-only --db-url postgres://postgres:password@localhost/memory_mcp_db
+```
+
 ### CLI Arguments
 
 | Argument | Type | Default | Description |
@@ -68,6 +74,7 @@ cargo run --release --features gpu -- --gpu
 | `--db-url` | string | `postgres://postgres:password@localhost/memory_mcp_db` | PostgreSQL connection string. |
 | `--allowed-hosts` | comma-separated string | `localhost,127.0.0.1` | Allowed hosts for streamable HTTP server. |
 | `--allowed-origins` | comma-separated string | empty | Allowed origins for streamable HTTP server. |
+| `--migrate-only` | bool flag | `false` | Only run database migrations, then exit without starting the server. |
 
 ### Environment Variables
 
