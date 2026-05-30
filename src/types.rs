@@ -69,7 +69,7 @@ pub mod memory_items {
         #[schemars(description = "The query string to search for")]
         pub query_text: String,
         #[schemars(
-            description = "Optional minimum distance threshold; lower-scoring results are filtered out, default is 0.008 for cosine similarity"
+            description = "Optional minimum RRF relevance score threshold; lower-scoring results are filtered out, default is 0.008"
         )]
         pub min_distance: Option<f64>,
         #[schemars(description = "The maximum number of results to return")]
@@ -89,7 +89,7 @@ pub mod memory_items {
         #[schemars(description = "The query string to search for in memory contents")]
         pub query_content: String,
         #[schemars(
-            description = "Optional minimum distance threshold; lower-scoring results are filtered out, default is 0.008 for cosine similarity"
+            description = "Optional minimum RRF relevance score threshold; lower-scoring results are filtered out, default is 0.008"
         )]
         pub min_distance: Option<f64>,
         #[schemars(description = "The maximum number of results to return")]
