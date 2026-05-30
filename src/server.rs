@@ -459,7 +459,7 @@ impl ServerState {
 
 #[tool_handler(
     name = "memory-mcp-server",
-    version = "0.1.0",
+    version = "0.2.0",
     instructions = "A memory MCP server with vector search"
 )]
 impl ServerHandler for ServerState {}
