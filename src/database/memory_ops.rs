@@ -87,7 +87,7 @@ impl Database {
                 SELECT id FROM memory_items WHERE {}
             ),
             vector_search AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY {}) as vector_rank
+                SELECT m.id, ROW_NUMBER() OVER (ORDER BY {}) as vector_rank
                 FROM scope s
                 JOIN memory_items m ON s.id = m.id
                 WHERE {}
@@ -95,26 +95,33 @@ impl Database {
                 LIMIT {}
             ),
             keyword_search AS (
-                SELECT id, ROW_NUMBER() OVER (ORDER BY {} DESC) as keyword_rank
+                SELECT m.id, ROW_NUMBER() OVER (ORDER BY {} DESC) as keyword_rank
                 FROM scope s
                 JOIN memory_items m ON s.id = m.id
                 WHERE {}
                 ORDER BY {} DESC
                 LIMIT {}
             ),
-            ranked AS (
-                SELECT m.id, m.document_id, m.summary, m.content, m.metadata,
-                       (COALESCE(1.0 / (60 + v.vector_rank), 0.0) + COALESCE(1.0 / (60 + k.keyword_rank), 0.0))::float8 as distance
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                LEFT JOIN vector_search v ON m.id = v.id
-                LEFT JOIN keyword_search k ON m.id = k.id
-                WHERE (v.id IS NOT NULL OR k.id IS NOT NULL)
+             combined_ids AS (
+                SELECT id, SUM(1.0 / (60 + rank))::float8 AS score
+                FROM (
+                    SELECT id, rank FROM vector_search
+                    UNION ALL
+                    SELECT id, rank FROM keyword_search
+                ) r
+                GROUP BY id
             )
-            SELECT *
-            FROM ranked
-            WHERE distance >= {}
-            ORDER BY distance DESC
+            SELECT
+                m.id,
+                m.document_id,
+                m.summary,
+                m.content,
+                m.metadata,
+                c.score AS distance
+            FROM combined_ids c
+            JOIN memory_items m ON c.id = m.id
+            WHERE c.score >= {}
+            ORDER BY c.score DESC
             LIMIT {}{}
             "#,
             materialized_view_clause,
@@ -185,7 +192,7 @@ impl Database {
                 SELECT id FROM memory_items WHERE {}
             ),
             summary_vector AS (
-                SELECT s.id, ROW_NUMBER() OVER (ORDER BY m.summary_embedding <#> $1) AS rank
+                SELECT m.id, ROW_NUMBER() OVER (ORDER BY m.summary_embedding <#> $1) AS rank
                 FROM scope s
                 JOIN memory_items m ON s.id = m.id
                 WHERE m.summary_embedding IS NOT NULL
@@ -193,7 +200,7 @@ impl Database {
                 LIMIT {}
             ),
             content_vector AS (
-                SELECT s.id, ROW_NUMBER() OVER (ORDER BY m.content_embedding <#> $2) AS rank
+                SELECT m.id, ROW_NUMBER() OVER (ORDER BY m.content_embedding <#> $2) AS rank
                 FROM scope s
                 JOIN memory_items m ON s.id = m.id
                 WHERE m.content_embedding IS NOT NULL
@@ -201,7 +208,7 @@ impl Database {
                 LIMIT {}
             ),
             summary_keyword AS (
-                SELECT s.id, ROW_NUMBER() OVER (ORDER BY similarity(m.summary, $3) DESC) AS rank
+                SELECT m.id, ROW_NUMBER() OVER (ORDER BY similarity(m.summary, $3) DESC) AS rank
                 FROM scope s
                 JOIN memory_items m ON s.id = m.id
                 WHERE m.summary % $3
@@ -209,38 +216,37 @@ impl Database {
                 LIMIT {}
             ),
             content_keyword AS (
-                SELECT s.id, ROW_NUMBER() OVER (ORDER BY similarity(m.content, $4) DESC) AS rank
+                SELECT m.id, ROW_NUMBER() OVER (ORDER BY similarity(m.content, $4) DESC) AS rank
                 FROM scope s
                 JOIN memory_items m ON s.id = m.id
                 WHERE m.content % $4
                 ORDER BY similarity(m.content, $4) DESC
                 LIMIT {}
             ),
-            ranked AS (
-                SELECT
-                    m.id,
-                    m.document_id,
-                    m.summary,
-                    m.content,
-                    m.metadata,
-                    (
-                        COALESCE(1.0 / (60 + sv.rank), 0.0) +
-                        COALESCE(1.0 / (60 + cv.rank), 0.0) +
-                        COALESCE(1.0 / (60 + sk.rank), 0.0) +
-                        COALESCE(1.0 / (60 + ck.rank), 0.0)
-                    )::float8 AS distance
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                LEFT JOIN summary_vector sv ON m.id = sv.id
-                LEFT JOIN content_vector cv ON m.id = cv.id
-                LEFT JOIN summary_keyword sk ON m.id = sk.id
-                LEFT JOIN content_keyword ck ON m.id = ck.id
-                WHERE (sv.id IS NOT NULL OR cv.id IS NOT NULL OR sk.id IS NOT NULL OR ck.id IS NOT NULL)
+            combined_ids AS (
+                SELECT id, SUM(1.0 / (60 + rank))::float8 AS score
+                FROM (
+                    SELECT id, rank FROM summary_vector
+                    UNION ALL
+                    SELECT id, rank FROM content_vector
+                    UNION ALL
+                    SELECT id, rank FROM summary_keyword
+                    UNION ALL
+                    SELECT id, rank FROM content_keyword
+                ) r
+                GROUP BY id
             )
-            SELECT *
-            FROM ranked
-            WHERE distance >= {}
-            ORDER BY distance DESC
+            SELECT 
+                m.id,
+                m.document_id,
+                m.summary,
+                m.content,
+                m.metadata,
+                c.score AS distance
+            FROM combined_ids c
+            JOIN memory_items m ON c.id = m.id
+            WHERE c.score >= {}
+            ORDER BY c.score DESC
             LIMIT {}{}
             "#,
             materialized_view_clause,
