@@ -30,19 +30,23 @@ const TABLES: [&str; 2] = [
     )",
 ];
 
-const INDEXES: [&str; 9] = [
+const INDEXES: [&str; 11] = [
     "CREATE INDEX IF NOT EXISTS documents_name_embedding_idx
-     ON documents USING hnsw (name_embedding vector_cosine_ops)",
+     ON documents USING hnsw (name_embedding vector_ip_ops)",
     "CREATE INDEX IF NOT EXISTS documents_description_embedding_idx
-     ON documents USING hnsw (description_embedding vector_cosine_ops)",
+     ON documents USING hnsw (description_embedding vector_ip_ops)",
     "CREATE INDEX IF NOT EXISTS documents_name_trgm_idx
      ON documents USING gin (name gin_trgm_ops)",
-    "CREATE INDEX IF NOT EXISTS documents_description_trgm_idx
+     "CREATE INDEX IF NOT EXISTS documents_description_trgm_idx
      ON documents USING gin (description gin_trgm_ops)",
+     "CREATE INDEX IF NOT EXISTS documents_description_coalesce_trgm_idx 
+      ON documents USING gin (COALESCE(description, '') gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS memory_items_document_id_idx
+     ON memory_items (document_id)",
     "CREATE INDEX IF NOT EXISTS memory_items_summary_embedding_idx
-     ON memory_items USING hnsw (summary_embedding vector_cosine_ops)",
+     ON memory_items USING hnsw (summary_embedding vector_ip_ops)",
     "CREATE INDEX IF NOT EXISTS memory_items_content_embedding_idx
-     ON memory_items USING hnsw (content_embedding vector_cosine_ops)",
+     ON memory_items USING hnsw (content_embedding vector_ip_ops)",
     "CREATE INDEX IF NOT EXISTS memory_items_metadata_idx
      ON memory_items USING gin (metadata)",
     "CREATE INDEX IF NOT EXISTS memory_items_summary_trgm_idx
@@ -74,7 +78,6 @@ impl Database {
         debug!("Creating indexes");
         execute_statements(&mut conn, &INDEXES)?;
 
-        self.migrate_database()?;
         info!("Database setup complete");
         Ok(())
     }
