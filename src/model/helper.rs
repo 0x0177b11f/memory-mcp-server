@@ -25,12 +25,12 @@ pub enum RuntimeModel {
     #[cfg(feature = "gpu")]
     Gpu {
         device: WgpuDevice,
-        model: Model<Wgpu>,
+        model: Box<Model<Wgpu>>,
         tokenizer: Box<Tokenizer>,
     },
     Cpu {
         device: FlexDevice,
-        model: Model<Flex>,
+        model: Box<Model<Flex>>,
         tokenizer: Box<Tokenizer>,
     },
 }
@@ -162,7 +162,7 @@ fn select_device(enable_gpu: bool) -> RuntimeDevice {
         RuntimeDevice::Gpu(WgpuDevice::default())
     } else {
         info!("Selecting CPU (Flex) device for model inference");
-        RuntimeDevice::Cpu(FlexDevice::default())
+        RuntimeDevice::Cpu(FlexDevice)
     }
 }
 
@@ -196,12 +196,12 @@ pub fn init_model(enable_gpu: bool) -> anyhow::Result<RuntimeModel> {
         #[cfg(feature = "gpu")]
         RuntimeDevice::Gpu(d) => RuntimeModel::Gpu {
             device: d.clone(),
-            model: Model::from_bytes(weight_bytes.clone(), d),
+            model: Box::new(Model::from_bytes(weight_bytes.clone(), d)),
             tokenizer: Box::new(tokenizer),
         },
         RuntimeDevice::Cpu(d) => RuntimeModel::Cpu {
-            device: d.clone(),
-            model: Model::from_bytes(weight_bytes, d),
+            device: *d,
+            model: Box::new(Model::from_bytes(weight_bytes, d)),
             tokenizer: Box::new(tokenizer),
         },
     };
