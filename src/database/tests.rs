@@ -1,12 +1,17 @@
 #[cfg(test)]
 mod tests {
     use crate::database::Database;
-    use std::env;
+    use std::{env, sync::OnceLock};
 
-    fn get_test_db() -> Option<Database> {
+    // init database
+    static SHARED_DB_INIT: OnceLock<Database> = OnceLock::new();
+
+    fn get_test_db() -> Option<&'static Database> {
         dotenvy::dotenv().ok();
         let url = env::var("DATABASE_URL").ok()?;
-        Database::new(&url).ok()
+        let db = SHARED_DB_INIT.get_or_init(|| Database::new(&url).unwrap());
+        assert!(db.setup_database().is_ok());
+        Some(db)
     }
 
     fn cleanup_docs_by_exact_name(db: &Database, target_name: &str) {
@@ -34,20 +39,14 @@ mod tests {
 
     #[test]
     fn test_setup_database() {
-        let db = match get_test_db() {
-            Some(db) => db,
-            None => return,
-        };
-        assert!(db.setup_database().is_ok());
+        assert!(get_test_db().is_some());
     }
 
     #[test]
     fn test_migrate_database() {
-        let db = match get_test_db() {
-            Some(db) => db,
-            None => return,
-        };
-        assert!(db.migrate_database().is_ok());
+        let db = get_test_db();
+        assert!(db.is_some());
+        assert!(db.unwrap().migrate_database().is_ok());
     }
 
     #[test]
@@ -56,7 +55,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
         let doc_name = "test_doc_collection";
 
         // Clean up first if exists
@@ -92,7 +90,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let doc_name = "test_memory_collection";
         cleanup_docs_by_exact_name(&db, doc_name);
@@ -143,7 +140,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let original_name = "test_update_doc_original";
         let updated_name = "test_update_doc_new_name";
@@ -214,7 +210,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let updated_name_embedding = vec![0.3; 384];
         let result = db.update_document(
@@ -234,7 +229,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let doc_name = "test_recall_collection";
         cleanup_docs_by_exact_name(&db, doc_name);
@@ -319,7 +313,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let doc_name = "test_multi_recall_collection";
         cleanup_docs_by_exact_name(&db, doc_name);
@@ -327,7 +320,12 @@ mod tests {
         let name_embedding = vec![0.1; 384];
         let desc_embedding = vec![0.2; 384];
         let doc_id = db
-            .create_document(doc_name, &name_embedding, "Multi recall test", &desc_embedding)
+            .create_document(
+                doc_name,
+                &name_embedding,
+                "Multi recall test",
+                &desc_embedding,
+            )
             .unwrap();
 
         let query_sum_embedding = vec![1.0; 384];
@@ -403,7 +401,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let doc_name = "test_metadata_filter_collection";
         cleanup_docs_by_exact_name(&db, doc_name);
@@ -411,7 +408,12 @@ mod tests {
         let name_embedding = vec![0.1; 384];
         let desc_embedding = vec![0.2; 384];
         let doc_id = db
-            .create_document(doc_name, &name_embedding, "Metadata filter test", &desc_embedding)
+            .create_document(
+                doc_name,
+                &name_embedding,
+                "Metadata filter test",
+                &desc_embedding,
+            )
             .unwrap();
 
         let query_embedding = vec![0.5; 384];
@@ -461,7 +463,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let doc_name = "test_offset_pagination_collection";
         cleanup_docs_by_exact_name(&db, doc_name);
@@ -469,7 +470,12 @@ mod tests {
         let name_embedding = vec![0.1; 384];
         let desc_embedding = vec![0.2; 384];
         let doc_id = db
-            .create_document(doc_name, &name_embedding, "Offset pagination test", &desc_embedding)
+            .create_document(
+                doc_name,
+                &name_embedding,
+                "Offset pagination test",
+                &desc_embedding,
+            )
             .unwrap();
 
         let query_embedding = vec![1.0; 384];
@@ -531,7 +537,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let doc_name = "test_min_distance_collection";
         cleanup_docs_by_exact_name(&db, doc_name);
@@ -539,7 +544,12 @@ mod tests {
         let name_embedding = vec![0.1; 384];
         let desc_embedding = vec![0.2; 384];
         let doc_id = db
-            .create_document(doc_name, &name_embedding, "Min distance test", &desc_embedding)
+            .create_document(
+                doc_name,
+                &name_embedding,
+                "Min distance test",
+                &desc_embedding,
+            )
             .unwrap();
 
         let query_embedding = vec![1.0; 384];
@@ -553,7 +563,7 @@ mod tests {
         )
         .unwrap();
 
-        // RRF distance is much smaller than 1.0 in this query design, so this threshold must filter all.
+        // RRF score is much smaller than 1.0 in this query design, so this threshold must filter all.
         let results = db
             .search_memory(
                 doc_id,
@@ -578,7 +588,6 @@ mod tests {
             Some(db) => db,
             None => return,
         };
-        db.setup_database().unwrap();
 
         let doc_name = "test_multi_metadata_filter_collection";
         cleanup_docs_by_exact_name(&db, doc_name);
@@ -586,7 +595,12 @@ mod tests {
         let name_embedding = vec![0.1; 384];
         let desc_embedding = vec![0.2; 384];
         let doc_id = db
-            .create_document(doc_name, &name_embedding, "Multi metadata filter test", &desc_embedding)
+            .create_document(
+                doc_name,
+                &name_embedding,
+                "Multi metadata filter test",
+                &desc_embedding,
+            )
             .unwrap();
 
         let sum_emb = vec![0.6; 384];

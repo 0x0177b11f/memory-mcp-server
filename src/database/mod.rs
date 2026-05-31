@@ -10,6 +10,9 @@ mod tests;
 
 use diesel::prelude::*;
 
+pub(crate) const RRF_VECTOR_WEIGHT: f64 = 1.5;
+pub(crate) const RRF_KEYWORD_WEIGHT: f64 = 1.0;
+
 #[derive(Clone)]
 pub struct Database {
     pool: diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<PgConnection>>,

@@ -4,6 +4,8 @@ use diesel::sql_types::*;
 use pgvector::Vector;
 
 use super::Database;
+use super::RRF_KEYWORD_WEIGHT;
+use super::RRF_VECTOR_WEIGHT;
 use super::models::*;
 
 impl Database {
@@ -50,58 +52,73 @@ impl Database {
             if !trimmed.is_empty() {
                 if let Some(emb) = keyword_emb {
                     let rrf_limit = (limit_value + offset_value) * 10;
-                    let query = r#"
-                        WITH name_vector AS (
-                            SELECT id, ROW_NUMBER() OVER (
+                    let query = format!(
+                        r#"
+                        WITH
+                        name_vector AS (
+                            SELECT id, ROW_NUMBER() OVER () AS rank
+                            FROM (
+                                SELECT id FROM documents
+                                WHERE name_embedding IS NOT NULL
                                 ORDER BY name_embedding <#> $1
-                            ) AS rank
-                            FROM documents
-                            WHERE name_embedding IS NOT NULL
-                            ORDER BY name_embedding <#> $1
-                            LIMIT $4
+                                LIMIT $4
+                            ) t
                         ),
                         description_vector AS (
-                            SELECT id, ROW_NUMBER() OVER (
+                            SELECT id, ROW_NUMBER() OVER () AS rank
+                            FROM (
+                                SELECT id FROM documents
+                                WHERE description_embedding IS NOT NULL
                                 ORDER BY description_embedding <#> $1
-                            ) AS rank
-                            FROM documents
-                            WHERE description_embedding IS NOT NULL
-                            ORDER BY description_embedding <#> $1
-                            LIMIT $4
+                                LIMIT $4
+                            ) t
                         ),
                         name_keyword AS (
-                            SELECT id, ROW_NUMBER() OVER (
+                            SELECT id, ROW_NUMBER() OVER () AS rank
+                            FROM (
+                                SELECT id FROM documents
+                                WHERE name % $2
                                 ORDER BY similarity(name, $2) DESC
-                            ) AS rank
-                            FROM documents
-                            WHERE name % $2
-                            ORDER BY similarity(name, $2) DESC
-                            LIMIT $4
+                                LIMIT $4
+                            ) t
                         ),
                         description_keyword AS (
-                            SELECT id, ROW_NUMBER() OVER (
+                            SELECT id, ROW_NUMBER() OVER () AS rank
+                            FROM (
+                                SELECT id FROM documents
+                                WHERE COALESCE(description, '') % $2
                                 ORDER BY similarity(COALESCE(description, ''), $2) DESC
-                            ) AS rank
-                            FROM documents
-                            WHERE COALESCE(description, '') % $2
-                            ORDER BY similarity(COALESCE(description, ''), $2) DESC
-                            LIMIT $4
+                                LIMIT $4
+                            ) t
+                        ),
+                        combined_ids AS (
+                            SELECT id, SUM(weight / (60 + rank))::float8 AS score
+                            FROM (
+                                SELECT id, rank, {}::float8 AS weight FROM name_vector
+                                UNION ALL
+                                SELECT id, rank, {}::float8 AS weight FROM description_vector
+                                UNION ALL
+                                SELECT id, rank, {}::float8 AS weight FROM name_keyword
+                                UNION ALL
+                                SELECT id, rank, {}::float8 AS weight FROM description_keyword
+                            ) r
+                            GROUP BY id
                         )
-                        SELECT d.id, d.name, d.description, d.created_at
-                        FROM documents d
-                        LEFT JOIN name_vector nv ON d.id = nv.id
-                        LEFT JOIN description_vector dv ON d.id = dv.id
-                        LEFT JOIN name_keyword nk ON d.id = nk.id
-                        LEFT JOIN description_keyword dk ON d.id = dk.id
-                        WHERE nv.id IS NOT NULL OR dv.id IS NOT NULL OR nk.id IS NOT NULL OR dk.id IS NOT NULL
-                        ORDER BY (
-                            COALESCE(1.0 / (60 + nv.rank), 0.0) +
-                            COALESCE(1.0 / (60 + dv.rank), 0.0) +
-                            COALESCE(1.0 / (60 + nk.rank), 0.0) +
-                            COALESCE(1.0 / (60 + dk.rank), 0.0)
-                        ) DESC
+                        SELECT
+                            s.id,
+                            s.name,
+                            s.description,
+                            s.created_at
+                        FROM combined_ids c
+                        JOIN documents s ON c.id = s.id
+                        ORDER BY c.score DESC
                         LIMIT $3 OFFSET $5
-                    "#;
+                        "#,
+                        RRF_VECTOR_WEIGHT,
+                        RRF_VECTOR_WEIGHT,
+                        RRF_KEYWORD_WEIGHT,
+                        RRF_KEYWORD_WEIGHT
+                    );
 
                     let rows = sql_query(query)
                         .bind::<pgvector::sql_types::Vector, _>(Vector::from(emb.to_vec()))
