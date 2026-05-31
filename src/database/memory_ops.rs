@@ -4,6 +4,8 @@ use diesel::sql_types::*;
 use pgvector::Vector;
 
 use super::Database;
+use super::RRF_KEYWORD_WEIGHT;
+use super::RRF_VECTOR_WEIGHT;
 use super::models::*;
 
 impl Database {
@@ -61,7 +63,6 @@ impl Database {
         }
 
         let mut conn = self.get_conn()?;
-        let emb_col = format!("{}_embedding", column);
 
         let mut materialized_view_clause = format!("document_id = {}", doc_id);
 
@@ -75,7 +76,8 @@ impl Database {
         let min_distance_param = if bind_metadata { "$5" } else { "$4" };
         let rrf_limit = (limit + offset.unwrap_or(0)) * 10;
         let offset_clause = offset.map(|o| format!(" OFFSET {}", o)).unwrap_or_default();
-
+        
+        let emb_col = format!("{}_embedding", column);
         let vector_order_expr = format!("{} <#> $1", emb_col);
         let keyword_order_expr = format!("similarity({}, $2)", column);
         let keyword_where_clause = format!("{} % $2", column);
@@ -83,56 +85,68 @@ impl Database {
 
         let query = format!(
             r#"
-            WITH scope AS MATERIALIZED (
-                SELECT id FROM memory_items WHERE {}
+            WITH
+            scope AS MATERIALIZED (
+                SELECT
+                    id,
+                    summary_embedding,
+                    content_embedding,
+                    summary,
+                    content,
+                    document_id,
+                    metadata
+                FROM memory_items
+                WHERE {}
             ),
             vector_search AS (
-                SELECT m.id, ROW_NUMBER() OVER (ORDER BY {}) as vector_rank
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                WHERE {}
-                ORDER BY {}
-                LIMIT {}
+                SELECT id, ROW_NUMBER() OVER () AS rank
+                FROM (
+                    SELECT id FROM scope
+                    WHERE {}
+                    ORDER BY {}
+                    LIMIT {}
+                ) t
             ),
             keyword_search AS (
-                SELECT m.id, ROW_NUMBER() OVER (ORDER BY {} DESC) as keyword_rank
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                WHERE {}
-                ORDER BY {} DESC
-                LIMIT {}
+                SELECT id, ROW_NUMBER() OVER () AS rank
+                FROM (
+                    SELECT id FROM scope
+                    WHERE {}
+                    ORDER BY {} DESC
+                    LIMIT {}
+                ) t
             ),
              combined_ids AS (
-                SELECT id, SUM(1.0 / (60 + rank))::float8 AS score
+                SELECT id, SUM(weight / (60 + rank))::float8 AS score
                 FROM (
-                    SELECT id, rank FROM vector_search
+                    SELECT id, rank, {}::float8 AS weight FROM vector_search
                     UNION ALL
-                    SELECT id, rank FROM keyword_search
+                    SELECT id, rank, {}::float8 AS weight FROM keyword_search
                 ) r
                 GROUP BY id
             )
             SELECT
-                m.id,
-                m.document_id,
-                m.summary,
-                m.content,
-                m.metadata,
-                c.score AS distance
+                s.id,
+                s.document_id,
+                s.summary,
+                s.content,
+                s.metadata,
+                c.score AS score
             FROM combined_ids c
-            JOIN memory_items m ON c.id = m.id
+            JOIN scope s ON c.id = s.id
             WHERE c.score >= {}
             ORDER BY c.score DESC
             LIMIT {}{}
             "#,
             materialized_view_clause,
-            vector_order_expr,
             vector_where_clause,
             vector_order_expr,
             rrf_limit,
-            keyword_order_expr,
             keyword_where_clause,
             keyword_order_expr,
             rrf_limit,
+            RRF_VECTOR_WEIGHT,
+            RRF_KEYWORD_WEIGHT,
             min_distance_param,
             limit_param,
             offset_clause
@@ -172,11 +186,11 @@ impl Database {
     ) -> anyhow::Result<Vec<SearchResult>> {
         let mut conn = self.get_conn()?;
 
-        let mut materialized_view_clause = format!("document_id = {}", doc_id);
+        let mut id_view_clause = format!("document_id = {}", doc_id);
 
         let mut bind_metadata = false;
         if metadata_filter.is_some() {
-            materialized_view_clause.push_str(" AND metadata @> $5");
+            id_view_clause.push_str(" AND metadata @> $5");
             bind_metadata = true;
         }
 
@@ -188,72 +202,97 @@ impl Database {
         let query = format!(
             r#"
             WITH
-            scope AS MATERIALIZED(
-                SELECT id FROM memory_items WHERE {}
+            scope AS MATERIALIZED (
+                SELECT
+                    id,
+                    summary_embedding,
+                    content_embedding,
+                    summary,
+                    content,
+                    document_id,
+                    metadata
+                FROM memory_items
+                WHERE {}
             ),
             summary_vector AS (
-                SELECT m.id, ROW_NUMBER() OVER (ORDER BY m.summary_embedding <#> $1) AS rank
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                WHERE m.summary_embedding IS NOT NULL
-                ORDER BY m.summary_embedding <#> $1
-                LIMIT {}
+                SELECT id, ROW_NUMBER() OVER () AS rank
+                FROM (
+                    SELECT id FROM scope
+                    WHERE {}
+                        AND summary_embedding IS NOT NULL
+                    ORDER BY summary_embedding <#> $1
+                    LIMIT {}
+                ) t
             ),
             content_vector AS (
-                SELECT m.id, ROW_NUMBER() OVER (ORDER BY m.content_embedding <#> $2) AS rank
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                WHERE m.content_embedding IS NOT NULL
-                ORDER BY m.content_embedding <#> $2
-                LIMIT {}
+                SELECT id, ROW_NUMBER() OVER () AS rank
+                FROM (
+                    SELECT id FROM scope
+                    WHERE {}
+                        AND content_embedding IS NOT NULL
+                    ORDER BY content_embedding <#> $2
+                    LIMIT {}
+                ) t
             ),
             summary_keyword AS (
-                SELECT m.id, ROW_NUMBER() OVER (ORDER BY similarity(m.summary, $3) DESC) AS rank
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                WHERE m.summary % $3
-                ORDER BY similarity(m.summary, $3) DESC
-                LIMIT {}
+                SELECT id, ROW_NUMBER() OVER () AS rank
+                FROM (
+                    SELECT id FROM scope
+                    WHERE {}
+                        AND summary % $3
+                    ORDER BY similarity(summary, $3) DESC
+                    LIMIT {}
+                ) t
             ),
             content_keyword AS (
-                SELECT m.id, ROW_NUMBER() OVER (ORDER BY similarity(m.content, $4) DESC) AS rank
-                FROM scope s
-                JOIN memory_items m ON s.id = m.id
-                WHERE m.content % $4
-                ORDER BY similarity(m.content, $4) DESC
-                LIMIT {}
+                SELECT id, ROW_NUMBER() OVER () AS rank
+                FROM (
+                    SELECT id FROM scope
+                    WHERE {}
+                        AND content % $4
+                    ORDER BY similarity(content, $4) DESC
+                    LIMIT {}
+                ) t
             ),
             combined_ids AS (
-                SELECT id, SUM(1.0 / (60 + rank))::float8 AS score
+                SELECT id, SUM(weight / (60 + rank))::float8 AS score
                 FROM (
-                    SELECT id, rank FROM summary_vector
+                    SELECT id, rank, {}::float8 AS weight FROM summary_vector
                     UNION ALL
-                    SELECT id, rank FROM content_vector
+                    SELECT id, rank, {}::float8 AS weight FROM content_vector
                     UNION ALL
-                    SELECT id, rank FROM summary_keyword
+                    SELECT id, rank, {}::float8 AS weight FROM summary_keyword
                     UNION ALL
-                    SELECT id, rank FROM content_keyword
+                    SELECT id, rank, {}::float8 AS weight FROM content_keyword
                 ) r
                 GROUP BY id
             )
             SELECT 
-                m.id,
-                m.document_id,
-                m.summary,
-                m.content,
-                m.metadata,
-                c.score AS distance
+                s.id,
+                s.document_id,
+                s.summary,
+                s.content,
+                s.metadata,
+                c.score AS score
             FROM combined_ids c
-            JOIN memory_items m ON c.id = m.id
+            JOIN scope s ON c.id = s.id
             WHERE c.score >= {}
             ORDER BY c.score DESC
             LIMIT {}{}
             "#,
-            materialized_view_clause,
+            id_view_clause,
+            id_view_clause,
             rrf_limit,
+            id_view_clause,
             rrf_limit,
+            id_view_clause,
             rrf_limit,
+            id_view_clause,
             rrf_limit,
+            RRF_VECTOR_WEIGHT,
+            RRF_VECTOR_WEIGHT,
+            RRF_KEYWORD_WEIGHT,
+            RRF_KEYWORD_WEIGHT,
             min_distance_param,
             limit_param,
             offset_clause

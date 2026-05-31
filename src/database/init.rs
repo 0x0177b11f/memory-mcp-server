@@ -37,10 +37,10 @@ const INDEXES: [&str; 11] = [
      ON documents USING hnsw (description_embedding vector_ip_ops)",
     "CREATE INDEX IF NOT EXISTS documents_name_trgm_idx
      ON documents USING gin (name gin_trgm_ops)",
-     "CREATE INDEX IF NOT EXISTS documents_description_trgm_idx
+    "CREATE INDEX IF NOT EXISTS documents_description_trgm_idx
      ON documents USING gin (description gin_trgm_ops)",
-     "CREATE INDEX IF NOT EXISTS documents_description_coalesce_trgm_idx 
-      ON documents USING gin (COALESCE(description, '') gin_trgm_ops)",
+    "CREATE INDEX IF NOT EXISTS documents_description_coalesce_trgm_idx 
+     ON documents USING gin (COALESCE(description, '') gin_trgm_ops)",
     "CREATE INDEX IF NOT EXISTS memory_items_document_id_idx
      ON memory_items (document_id)",
     "CREATE INDEX IF NOT EXISTS memory_items_summary_embedding_idx

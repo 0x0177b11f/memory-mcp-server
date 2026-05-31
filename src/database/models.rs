@@ -69,7 +69,7 @@ pub mod search {
         #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Jsonb>)]
         pub metadata: Option<serde_json::Value>,
         #[diesel(sql_type = diesel::sql_types::Double)]
-        pub distance: f64,
+        pub score: f64,
     }
 }
 
