@@ -79,14 +79,14 @@ impl Database {
         
         let emb_col = format!("{}_embedding", column);
         let vector_order_expr = format!("{} <#> $1", emb_col);
+        let vector_where_clause = format!("{} IS NOT NULL", emb_col);
         let keyword_order_expr = format!("similarity({}, $2)", column);
         let keyword_where_clause = format!("{} % $2", column);
-        let vector_where_clause = format!("{} IS NOT NULL", emb_col);
 
         let query = format!(
             r#"
             WITH
-            scope AS MATERIALIZED (
+            scope AS (
                 SELECT
                     id,
                     summary_embedding,
@@ -202,7 +202,7 @@ impl Database {
         let query = format!(
             r#"
             WITH
-            scope AS MATERIALIZED (
+            scope AS (
                 SELECT
                     id,
                     summary_embedding,
@@ -218,8 +218,7 @@ impl Database {
                 SELECT id, ROW_NUMBER() OVER () AS rank
                 FROM (
                     SELECT id FROM scope
-                    WHERE {}
-                        AND summary_embedding IS NOT NULL
+                    WHERE summary_embedding IS NOT NULL
                     ORDER BY summary_embedding <#> $1
                     LIMIT {}
                 ) t
@@ -228,8 +227,7 @@ impl Database {
                 SELECT id, ROW_NUMBER() OVER () AS rank
                 FROM (
                     SELECT id FROM scope
-                    WHERE {}
-                        AND content_embedding IS NOT NULL
+                    WHERE content_embedding IS NOT NULL
                     ORDER BY content_embedding <#> $2
                     LIMIT {}
                 ) t
@@ -238,8 +236,7 @@ impl Database {
                 SELECT id, ROW_NUMBER() OVER () AS rank
                 FROM (
                     SELECT id FROM scope
-                    WHERE {}
-                        AND summary % $3
+                    WHERE summary % $3
                     ORDER BY similarity(summary, $3) DESC
                     LIMIT {}
                 ) t
@@ -248,8 +245,7 @@ impl Database {
                 SELECT id, ROW_NUMBER() OVER () AS rank
                 FROM (
                     SELECT id FROM scope
-                    WHERE {}
-                        AND content % $4
+                    WHERE content % $4
                     ORDER BY similarity(content, $4) DESC
                     LIMIT {}
                 ) t
@@ -281,13 +277,9 @@ impl Database {
             LIMIT {}{}
             "#,
             id_view_clause,
-            id_view_clause,
             rrf_limit,
-            id_view_clause,
             rrf_limit,
-            id_view_clause,
             rrf_limit,
-            id_view_clause,
             rrf_limit,
             RRF_VECTOR_WEIGHT,
             RRF_VECTOR_WEIGHT,
