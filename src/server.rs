@@ -5,10 +5,10 @@ use crate::types::*;
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, Content},
+    model::{CallToolResult, ContentBlock},
     tool, tool_handler, tool_router,
 };
-use serde_json::json;
+use serde::Serialize;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info};
@@ -22,6 +22,47 @@ fn resolve_min_distance(min_distance: Option<f64>) -> f64 {
     } else {
         DEFAULT_MIN_DISTANCE
     }
+}
+
+#[derive(Serialize)]
+struct CreateDocumentResponse<'a> {
+    name: &'a str,
+    id: i64,
+}
+
+#[derive(Serialize)]
+struct DocumentIdResponse {
+    document_id: i64,
+}
+
+#[derive(Serialize)]
+struct MemoryIdResponse {
+    memory_id: i64,
+}
+
+#[derive(Serialize)]
+struct UpdateDocumentResponse<'a> {
+    document_id: i64,
+    updated_fields: Vec<&'a str>,
+}
+
+#[derive(Serialize)]
+struct DocumentsResponse<T> {
+    documents: T,
+}
+
+#[derive(Serialize)]
+struct SearchResultsResponse<T> {
+    results: T,
+}
+
+fn toml_result<T: Serialize>(payload: &T) -> Result<CallToolResult, McpError> {
+    let text = toml::to_string(payload).map_err(|e| {
+        error!("Failed to serialize tool response as TOML: {}", e);
+        McpError::internal_error(e.to_string(), None)
+    })?;
+
+    Ok(CallToolResult::success(vec![ContentBlock::text(text)]))
 }
 
 #[derive(Clone)]
@@ -80,9 +121,10 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         info!("Document created with ID: {}", doc_id);
-        Ok(CallToolResult::success(vec![Content::text(
-            json!({"name": args.name, "id": doc_id}).to_string(),
-        )]))
+        toml_result(&CreateDocumentResponse {
+            name: &args.name,
+            id: doc_id,
+        })
     }
 
     #[tool(
@@ -131,9 +173,7 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         debug!("Found {} documents", docs.len());
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&docs).unwrap_or_else(|e| e.to_string()),
-        )]))
+        toml_result(&DocumentsResponse { documents: docs })
     }
 
     #[tool(
@@ -150,9 +190,9 @@ impl ServerState {
             McpError::internal_error(e.to_string(), None)
         })?;
         info!("Document ID: {} deleted", args.document_id);
-        Ok(CallToolResult::success(vec![Content::text(
-            json!({"document_id": args.document_id}).to_string(),
-        )]))
+        toml_result(&DocumentIdResponse {
+            document_id: args.document_id,
+        })
     }
 
     #[tool(
@@ -235,9 +275,10 @@ impl ServerState {
         }
 
         info!("Document ID: {} updated", args.document_id);
-        Ok(CallToolResult::success(vec![Content::text(
-            json!({"document_id": args.document_id, "updated_fields": updated_fields}).to_string(),
-        )]))
+        toml_result(&UpdateDocumentResponse {
+            document_id: args.document_id,
+            updated_fields,
+        })
     }
 
     #[tool(
@@ -284,9 +325,9 @@ impl ServerState {
             "Memory successfully inserted into document ID: {}",
             args.document_id
         );
-        Ok(CallToolResult::success(vec![Content::text(
-            json!({"document_id": args.document_id}).to_string(),
-        )]))
+        toml_result(&DocumentIdResponse {
+            document_id: args.document_id,
+        })
     }
 
     #[tool(name = "delete_memory", description = "Delete a specific memory chunk")]
@@ -300,9 +341,9 @@ impl ServerState {
             McpError::internal_error(e.to_string(), None)
         })?;
         info!("Memory ID: {} deleted", args.memory_id);
-        Ok(CallToolResult::success(vec![Content::text(
-            json!({"memory_id": args.memory_id}).to_string(),
-        )]))
+        toml_result(&MemoryIdResponse {
+            memory_id: args.memory_id,
+        })
     }
 
     #[tool(
@@ -347,9 +388,7 @@ impl ServerState {
             })?;
 
         debug!("Search memory summary returned {} results", results.len());
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string()),
-        )]))
+        toml_result(&SearchResultsResponse { results })
     }
 
     #[tool(
@@ -393,9 +432,7 @@ impl ServerState {
                 McpError::internal_error(e.to_string(), None)
             })?;
         debug!("Search memory content returned {} results", results.len());
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string()),
-        )]))
+        toml_result(&SearchResultsResponse { results })
     }
 
     #[tool(
@@ -451,15 +488,13 @@ impl ServerState {
             })?;
 
         debug!("Search memory returned {} results", results.len());
-        Ok(CallToolResult::success(vec![Content::text(
-            serde_json::to_string(&results).unwrap_or_else(|e| e.to_string()),
-        )]))
+        toml_result(&SearchResultsResponse { results })
     }
 }
 
 #[tool_handler(
     name = "memory-mcp-server",
-    version = "0.2.0",
+    version = "0.4.0",
     instructions = "A memory MCP server with vector search"
 )]
 impl ServerHandler for ServerState {}

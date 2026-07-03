@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tomllib
 import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
@@ -150,15 +151,23 @@ class McpClient:
         return self.rpc("tools/call", {"name": name, "arguments": arguments})
 
 
-def extract_json_from_tool_result(tool_result: Dict[str, Any]) -> Any:
+def parse_tool_text(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return text
+
+
+def extract_tool_result_payload(tool_result: Dict[str, Any]) -> Any:
     content = tool_result.get("content", [])
     for item in content:
         if item.get("type") == "text" and "text" in item:
-            text = item["text"]
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                return text
+            return parse_tool_text(item["text"])
     return content
 
 
@@ -198,7 +207,7 @@ def main() -> int:
         print("[3/7] Create document")
         name = f"mcp_smoke_{uuid.uuid4().hex[:8]}"
         create_res = client.call_tool("create_document", {"name": name, "description": "MCP smoke test"})
-        create_data = extract_json_from_tool_result(create_res)
+        create_data = extract_tool_result_payload(create_res)
         if not isinstance(create_data, dict) or "id" not in create_data:
             raise RuntimeError(f"Unexpected create_document result: {create_data}")
         doc_id = int(create_data["id"])
@@ -227,7 +236,8 @@ def main() -> int:
             "search_memory_content",
             {"document_id": doc_id, "query_text": "tokio concurrent task spawn", "limit": 5},
         )
-        search_data = extract_json_from_tool_result(search_res)
+        search_payload = extract_tool_result_payload(search_res)
+        search_data = search_payload.get("results") if isinstance(search_payload, dict) else search_payload
         if not isinstance(search_data, list) or not search_data:
             raise RuntimeError(f"Unexpected search result: {search_data}")
         top = search_data[0]

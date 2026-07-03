@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tomllib
 import uuid
 from dataclasses import dataclass
 from random import Random
@@ -131,15 +132,23 @@ class McpClient:
         return self.rpc("tools/call", {"name": name, "arguments": arguments})
 
 
-def extract_json_from_tool_result(tool_result: Dict[str, Any]) -> Any:
+def parse_tool_text(text: str) -> Any:
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        return tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        return text
+
+
+def extract_tool_result_payload(tool_result: Dict[str, Any]) -> Any:
     content = tool_result.get("content", [])
     for item in content:
         if item.get("type") == "text" and "text" in item:
-            text = item["text"]
-            try:
-                return json.loads(text)
-            except json.JSONDecodeError:
-                return text
+            return parse_tool_text(item["text"])
     return content
 
 
@@ -261,7 +270,7 @@ def main() -> int:
             "create_document",
             {"name": eval_doc_name, "description": "Temporary document for recall evaluation"},
         )
-        create_data = extract_json_from_tool_result(create_res)
+        create_data = extract_tool_result_payload(create_res)
         if not isinstance(create_data, dict) or "id" not in create_data:
             raise RuntimeError(f"Unexpected create_document result: {create_data}")
         doc_id = int(create_data["id"])
@@ -301,7 +310,8 @@ def main() -> int:
                     "limit": topk,
                 },
             )
-            data = extract_json_from_tool_result(res)
+            payload = extract_tool_result_payload(res)
+            data = payload.get("results") if isinstance(payload, dict) else payload
             if not isinstance(data, list):
                 raise RuntimeError(f"Unexpected search result for query {i}: {data}")
 
