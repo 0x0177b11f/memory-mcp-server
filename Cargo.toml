@@ -8,7 +8,7 @@ default = []
 gpu = ["burn/wgpu"]
 
 [dependencies]
-diesel = { version = "2.3.10", features = ["chrono", "postgres", "r2d2", "serde_json"] }
+diesel = { version = "2.3.11", features = ["chrono", "postgres", "r2d2", "serde_json"] }
 pq-sys = { version = "0.7.5", features = ["bundled"] }
 openssl-sys = { version = "0.9.117", features = ["vendored"] }
 tokio = { version = "1", features = ["full"] }
@@ -23,9 +23,9 @@ pgvector = { version = "0.4.2", features = ["diesel", "serde"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "1.1"
-chrono = { version = "0.4.44", features = ["serde"] }
+chrono = { version = "0.4.45", features = ["serde"] }
 dotenvy = "0.15.7"
-rmcp = { version = "2.1.0", features = ["server", "macros", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
+rmcp = { version = "2.2.0", features = ["server", "macros", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
 schemars = "1.2.1"
 anyhow = "1.0"
 tracing = "0.1.44"
